@@ -13,15 +13,26 @@ namespace drake {
 namespace examples {
 namespace quadrotor {
 
+//----------------LIZHUANG MODIFIED HERE-------------------
 const QuadrotorGeometry* QuadrotorGeometry::AddToBuilder(
     systems::DiagramBuilder<double>* builder,
     const systems::OutputPort<double>& quadrotor_state_port,
     geometry::SceneGraph<double>* scene_graph) {
+  // Backward compatible: Call the overloaded function with default URDF
+  return AddToBuilder(builder, quadrotor_state_port, scene_graph,
+                      std::string(QuadrotorGeometry::kDefaultUrdfUrl));
+}
+
+const QuadrotorGeometry* QuadrotorGeometry::AddToBuilder(
+    systems::DiagramBuilder<double>* builder,
+    const systems::OutputPort<double>& quadrotor_state_port,
+    geometry::SceneGraph<double>* scene_graph,
+    const std::string& urdf_url) {
   DRAKE_THROW_UNLESS(builder != nullptr);
   DRAKE_THROW_UNLESS(scene_graph != nullptr);
 
   auto quadrotor_geometry = builder->AddSystem(
-      std::unique_ptr<QuadrotorGeometry>(new QuadrotorGeometry(scene_graph)));
+      std::unique_ptr<QuadrotorGeometry>(new QuadrotorGeometry(scene_graph, urdf_url)));
   builder->Connect(quadrotor_state_port, quadrotor_geometry->get_input_port(0));
   builder->Connect(
       quadrotor_geometry->get_output_port(0),
@@ -29,22 +40,39 @@ const QuadrotorGeometry* QuadrotorGeometry::AddToBuilder(
 
   return quadrotor_geometry;
 }
+//----------------------------------------------------------
 
+//// Original Implementation of AddToBuilder
+// const QuadrotorGeometry* QuadrotorGeometry::AddToBuilder(
+//     systems::DiagramBuilder<double>* builder,
+//     const systems::OutputPort<double>& quadrotor_state_port,
+//     geometry::SceneGraph<double>* scene_graph) {
+//   DRAKE_THROW_UNLESS(builder != nullptr);
+//   DRAKE_THROW_UNLESS(scene_graph != nullptr);
+
+//   auto quadrotor_geometry = builder->AddSystem(
+//       std::unique_ptr<QuadrotorGeometry>(new QuadrotorGeometry(scene_graph)));
+//   builder->Connect(quadrotor_state_port, quadrotor_geometry->get_input_port(0));
+//   builder->Connect(
+//       quadrotor_geometry->get_output_port(0),
+//       scene_graph->get_source_pose_port(quadrotor_geometry->source_id_));
+
+//   return quadrotor_geometry;
+// }
+
+//---------------------LIZHUANG MODIFIED HERE--------------------------
 QuadrotorGeometry::QuadrotorGeometry(
-    geometry::SceneGraph<double>* scene_graph) {
+    geometry::SceneGraph<double>* scene_graph,
+    const std::string& urdf_url) {
   DRAKE_THROW_UNLESS(scene_graph != nullptr);
 
-  // Use (temporary) MultibodyPlant to parse the urdf and setup the
-  // scene_graph.
-  // TODO(SeanCurtis-TRI): Update this on resolution of #10775.
   multibody::MultibodyPlant<double> mbp(0.0);
   multibody::Parser parser(&mbp, scene_graph);
 
-  const auto model_instance_indices =
-      parser.AddModelsFromUrl("package://drake_models/skydio_2/quadrotor.urdf");
+  // Use the user-costomized input "urdf_url" (file://directory for local file, or package://..., model://... for online drake models) instead of hardcoding
+  const auto model_instance_indices = parser.AddModelsFromUrl(urdf_url);
   mbp.Finalize();
 
-  // Identify the single quadrotor body and its frame.
   DRAKE_THROW_UNLESS(model_instance_indices.size() == 1);
   const auto body_indices = mbp.GetBodyIndices(model_instance_indices[0]);
   DRAKE_THROW_UNLESS(body_indices.size() == 1);
@@ -56,6 +84,34 @@ QuadrotorGeometry::QuadrotorGeometry(
   this->DeclareAbstractOutputPort("geometry_pose",
                                   &QuadrotorGeometry::OutputGeometryPose);
 }
+//---------------------------------------------------------------------
+
+// QuadrotorGeometry::QuadrotorGeometry(
+//     geometry::SceneGraph<double>* scene_graph) {
+//   DRAKE_THROW_UNLESS(scene_graph != nullptr);
+
+//   // Use (temporary) MultibodyPlant to parse the urdf and setup the
+//   // scene_graph.
+//   // TODO(SeanCurtis-TRI): Update this on resolution of #10775.
+//   multibody::MultibodyPlant<double> mbp(0.0);
+//   multibody::Parser parser(&mbp, scene_graph);
+
+//   const auto model_instance_indices =
+//       parser.AddModelsFromUrl("package://drake_models/skydio_2/quadrotor.urdf");
+//   mbp.Finalize();
+
+//   // Identify the single quadrotor body and its frame.
+//   DRAKE_THROW_UNLESS(model_instance_indices.size() == 1);
+//   const auto body_indices = mbp.GetBodyIndices(model_instance_indices[0]);
+//   DRAKE_THROW_UNLESS(body_indices.size() == 1);
+//   const multibody::BodyIndex body_index = body_indices[0];
+//   source_id_ = *mbp.get_source_id();
+//   frame_id_ = mbp.GetBodyFrameIdOrThrow(body_index);
+
+//   this->DeclareVectorInputPort("state", 12);
+//   this->DeclareAbstractOutputPort("geometry_pose",
+//                                   &QuadrotorGeometry::OutputGeometryPose);
+// }
 
 QuadrotorGeometry::~QuadrotorGeometry() = default;
 

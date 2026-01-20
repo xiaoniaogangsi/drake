@@ -41,8 +41,22 @@ class QuadrotorGeometry final : public systems::LeafSystem<double> {
       const systems::OutputPort<double>& quadrotor_state_port,
       geometry::SceneGraph<double>* scene_graph);
 
+  // LIZHUANG MODIFIED: New interface: allow input self-defined URDF URL / file directory
+  static const QuadrotorGeometry* AddToBuilder(
+      systems::DiagramBuilder<double>* builder,
+      const systems::OutputPort<double>& quadrotor_state_port,
+      geometry::SceneGraph<double>* scene_graph,
+      const std::string& urdf_url);
+
+  // LIZHUANG MODIFIED HERE
+  static constexpr const char* kDefaultUrdfUrl = 
+      "package://drake_models/skydio_2/quadrotor.urdf";
+ 
  private:
-  explicit QuadrotorGeometry(geometry::SceneGraph<double>*);
+  explicit QuadrotorGeometry(geometry::SceneGraph<double>* scene_graph,
+                             const std::string& urdf_url = kDefaultUrdfUrl);  // LIZHUANG ADDED HERE
+
+  // explicit QuadrotorGeometry(geometry::SceneGraph<double>*); // LIZHUANG MODIFIED HERE
   void OutputGeometryPose(const systems::Context<double>&,
                           geometry::FramePoseVector<double>*) const;
 

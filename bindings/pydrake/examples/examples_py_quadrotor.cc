@@ -41,9 +41,27 @@ void DefineExamplesQuadrotor(py::module m) {
       m, "QuadrotorGeometry", doc.QuadrotorGeometry.doc)
       .def("get_frame_id", &QuadrotorGeometry::get_frame_id,
           doc.QuadrotorGeometry.get_frame_id.doc)
-      .def_static("AddToBuilder", &QuadrotorGeometry::AddToBuilder,
+      .def_static("AddToBuilder", 
+        //   &QuadrotorGeometry::AddToBuilder,
+          static_cast<const QuadrotorGeometry*(*)(systems::DiagramBuilder<double>*,
+                                                    const systems::OutputPort<double>&,
+                                                    geometry::SceneGraph<double>*)>(
+                    &QuadrotorGeometry::AddToBuilder),
           py::arg("builder"), py::arg("quadrotor_state_port"),
           py::arg("scene_graph"), py::return_value_policy::reference,
+          // Keep alive, ownership: `return` keeps `builder` alive.
+          py::keep_alive<0, 1>(), doc.QuadrotorGeometry.AddToBuilder.doc)
+      .def_static("AddToBuilder", 
+        //   &QuadrotorGeometry::AddToBuilder,
+          static_cast<const QuadrotorGeometry*(*)(systems::DiagramBuilder<double>*,
+                                                        const systems::OutputPort<double>&,
+                                                        geometry::SceneGraph<double>*,
+                                                        const std::string&)>(
+                    &QuadrotorGeometry::AddToBuilder),
+          py::arg("builder"), py::arg("quadrotor_state_port"),
+          py::arg("scene_graph"), py::arg("urdf_url") = QuadrotorGeometry::kDefaultUrdfUrl,   //LIZHUANG MODIFIED HERE
+          py::return_value_policy::reference,
+          //Originally:     py::arg("scene_graph"), py::return_value_policy::reference,
           // Keep alive, ownership: `return` keeps `builder` alive.
           py::keep_alive<0, 1>(), doc.QuadrotorGeometry.AddToBuilder.doc);
 

@@ -30,3 +30,6 @@
 
 # User-specified configuration
 /user.bazelrc
+
+# VS Code files
+**/.vscode/

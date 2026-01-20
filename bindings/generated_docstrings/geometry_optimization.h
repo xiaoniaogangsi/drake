@@ -2633,7 +2633,16 @@ ImplicitGraphOfConvexSets.)""";
           // Symbol: drake::geometry::optimization::GraphOfConvexSets::AddEdge
           struct /* AddEdge */ {
             // Source: drake/geometry/optimization/graph_of_convex_sets.h
-            const char* doc =
+            const char* doc_singleagent =
+R"""(Adds an edge to the graph from Vertex ``u`` to Vertex ``v``. The
+vertex references must refer to valid vertices in this graph. If
+``name`` is empty then a default name will be provided.
+
+Raises:
+    RuntimeError if ``u`` or ``v`` are not valid vertices in this
+    graph.)""";
+            // Source: drake/geometry/optimization/graph_of_convex_sets.h
+            const char* doc_multiagent =
 R"""(Adds an edge to the graph from Vertex ``u`` to Vertex ``v``. The
 vertex references must refer to valid vertices in this graph. If
 ``name`` is empty then a default name will be provided.
@@ -2667,10 +2676,16 @@ Raises:
           // Symbol: drake::geometry::optimization::GraphOfConvexSets::AddVertex
           struct /* AddVertex */ {
             // Source: drake/geometry/optimization/graph_of_convex_sets.h
-            const char* doc =
+            const char* doc_singleagent =
 R"""(Adds a vertex to the graph. A copy of ``set`` is cloned and stored
 inside the graph. If ``name`` is empty then a default name will be
 provided.)""";
+            // Source: drake/geometry/optimization/graph_of_convex_sets.h
+            const char* doc_multiagent =
+R"""(Adds a vertex to the graph. A copy of ``set`` is cloned and stored
+inside the graph. If ``name`` is empty then a default name will be
+provided. ``n_agents`` gives the number of multiple sets of variables
+concatenated in a vector.)""";
           } AddVertex;
           // Symbol: drake::geometry::optimization::GraphOfConvexSets::AddVertexFromTemplate
           struct /* AddVertexFromTemplate */ {
@@ -2750,6 +2765,33 @@ Raises:
 Raises:
     RuntimeError if no transcription is specified.)""";
             } AddConstraint;
+            // Symbol: drake::geometry::optimization::GraphOfConvexSets::Edge::AddConstraintForAgent
+            struct /* AddConstraintForAgent */ {
+              // Source: drake/geometry/optimization/graph_of_convex_sets.h
+              const char* doc =
+R"""(Adds a constraint to this edge for a specific ``agent``.
+
+Parameter ``agent``:
+    specifies the agent this constriant is for.
+
+Parameter ``binding``:
+    must contain *only* elements of xu() and xv() as variables.
+
+Parameter ``use_in_transcription``:
+    specifies the components of the problem to which the constraint
+    should be added.
+
+Raises:
+    RuntimeError if binding.variables() is not a subset of xu() ∪
+    xv().
+
+Raises:
+    RuntimeError if xu() ∪ xv() is empty, i.e., when both vertices
+    have an ambient dimension of zero.
+
+Raises:
+    RuntimeError if no transcription is specified.)""";
+            } AddConstraintForAgent;
             // Symbol: drake::geometry::optimization::GraphOfConvexSets::Edge::AddCost
             struct /* AddCost */ {
               // Source: drake/geometry/optimization/graph_of_convex_sets.h
@@ -2837,6 +2879,55 @@ Raises:
 Raises:
     RuntimeError if no transcription is specified.)""";
             } AddCost;
+            // Symbol: drake::geometry::optimization::GraphOfConvexSets::Edge::AddCostForAgent
+            struct /* AddCostForAgent */ {
+              // Source: drake/geometry/optimization/graph_of_convex_sets.h
+              const char* doc =
+R"""(Adds a cost to this edge for agent ``agent``. ``binding`` must contain
+*only* elements of xu() and xv() as variables. For technical reasons
+relating to being able to "turn-off" the cost on inactive edges, all
+costs are eventually implemented with a slack variable and a
+constraint:
+
+
+.. raw:: html
+
+    <details><summary>Click to expand C++ code...</summary>
+
+.. code-block:: c++
+
+    min g(xu, xv) ⇒ min ℓ, s.t. ℓ ≥ g(xu,xv)
+
+.. raw:: html
+
+    </details>
+
+You must use GetSolutionCost() to retrieve the cost of the solution,
+rather than evaluating the cost directly, in order to get consistent
+behavior when solving with the different GCS transcriptions.
+
+Parameter ``agent``:
+    specifies the specific agent the cost is for.
+
+Parameter ``use_in_transcription``:
+    specifies the components of the problem to which the constraint
+    should be added.
+
+Note:
+    Linear costs lead to negative costs if decision variables are not
+    properly constrained. Users may want to check that the solution
+    does not contain negative costs.
+
+Returns:
+    the added cost, g(xu, xv).
+
+Raises:
+    RuntimeError if binding.variables() is not a subset of xu() ∪
+    xv().
+
+Raises:
+    RuntimeError if no transcription is specified.)""";
+            } AddCostForAgent;
             // Symbol: drake::geometry::optimization::GraphOfConvexSets::Edge::AddPhiConstraint
             struct /* AddPhiConstraint */ {
               // Source: drake/geometry/optimization/graph_of_convex_sets.h
@@ -2848,12 +2939,38 @@ Note:
     by this call, as that would allow the caller to make nonsensical
     modifications to its bounds (i.e. requiring phi == 0.5).)""";
             } AddPhiConstraint;
+            // Symbol: drake::geometry::optimization::GraphOfConvexSets::Edge::AddPhiConstraintForAgent
+            struct /* AddPhiConstraintForAgent */ {
+              // Source: drake/geometry/optimization/graph_of_convex_sets.h
+              const char* doc =
+R"""(Adds a constraint on the binary variable associated with this edge and
+this ``agent``.
+
+Note:
+    We intentionally do not return a binding to the constraint created
+    by this call, as that would allow the caller to make nonsensical
+    modifications to its bounds (i.e. requiring phi == 0.5).)""";
+            } AddPhiConstraintForAgent;
             // Symbol: drake::geometry::optimization::GraphOfConvexSets::Edge::ClearPhiConstraints
             struct /* ClearPhiConstraints */ {
               // Source: drake/geometry/optimization/graph_of_convex_sets.h
               const char* doc =
 R"""(Removes any constraints added with AddPhiConstraint.)""";
             } ClearPhiConstraints;
+            // Symbol: drake::geometry::optimization::GraphOfConvexSets::Edge::ClearPhiConstraintsForAgent
+            struct /* ClearPhiConstraintsForAgent */ {
+              // Source: drake/geometry/optimization/graph_of_convex_sets.h
+              const char* doc =
+R"""(Removes any constraints added to ``agent`` with
+AddPhiConstraintForAgent.)""";
+            } ClearPhiConstraintsForAgent;
+            // Symbol: drake::geometry::optimization::GraphOfConvexSets::Edge::ClearPhiConstraintsForAllAgents
+            struct /* ClearPhiConstraintsForAllAgents */ {
+              // Source: drake/geometry/optimization/graph_of_convex_sets.h
+              const char* doc =
+R"""(Removes any constraints added to any agent with
+AddPhiConstraintForAgent at once)""";
+            } ClearPhiConstraintsForAllAgents;
             // Symbol: drake::geometry::optimization::GraphOfConvexSets::Edge::Edge
             struct /* ctor */ {
               // Source: drake/geometry/optimization/graph_of_convex_sets.h
@@ -2863,7 +2980,8 @@ R"""(Removes any constraints added with AddPhiConstraint.)""";
             struct /* GetConstraints */ {
               // Source: drake/geometry/optimization/graph_of_convex_sets.h
               const char* doc =
-R"""(Returns constraints on this edge.
+R"""(Returns constraints on this edge. (The union of constraints for all
+agnets)
 
 Parameter ``used_in_transcription``:
     specifies the components of the problem from which the constraint
@@ -2872,11 +2990,27 @@ Parameter ``used_in_transcription``:
 Raises:
     RuntimeError if no transcription is specified.)""";
             } GetConstraints;
+            // Symbol: drake::geometry::optimization::GraphOfConvexSets::Edge::GetConstraintsForAgent
+            struct /* GetConstraintsForAgent */ {
+              // Source: drake/geometry/optimization/graph_of_convex_sets.h
+              const char* doc =
+R"""(Returns constraints of a specific ``agent`` on this edge.
+
+Parameter ``agent``:
+    specifies the constraints of which agent should be returned.
+
+Parameter ``used_in_transcription``:
+    specifies the components of the problem from which the constraint
+    should be retrieved.
+
+Raises:
+    RuntimeError if no transcription is specified.)""";
+            } GetConstraintsForAgent;
             // Symbol: drake::geometry::optimization::GraphOfConvexSets::Edge::GetCosts
             struct /* GetCosts */ {
               // Source: drake/geometry/optimization/graph_of_convex_sets.h
               const char* doc =
-R"""(Returns costs on this edge.
+R"""(Returns costs on this edge. (The union of costs for all agents)
 
 Parameter ``used_in_transcription``:
     specifies the components of the problem from which the constraint
@@ -2885,20 +3019,69 @@ Parameter ``used_in_transcription``:
 Raises:
     RuntimeError if no transcription is specified.)""";
             } GetCosts;
+            // Symbol: drake::geometry::optimization::GraphOfConvexSets::Edge::GetCostsForAgent
+            struct /* GetCostsForAgent */ {
+              // Source: drake/geometry/optimization/graph_of_convex_sets.h
+              const char* doc =
+R"""(Returns costs on this edge for a specific ``agent``.
+
+Parameter ``agent``:
+    specifies the costs of which agent should be returned.
+
+Parameter ``used_in_transcription``:
+    specifies the components of the problem from which the constraint
+    should be retrieved.
+
+Raises:
+    RuntimeError if no transcription is specified.)""";
+            } GetCostsForAgent;
             // Symbol: drake::geometry::optimization::GraphOfConvexSets::Edge::GetSolutionCost
             struct /* GetSolutionCost */ {
               // Source: drake/geometry/optimization/graph_of_convex_sets.h
-              const char* doc_1args =
+              const char* doc_allcosts =
 R"""(Returns the sum of the costs associated with this edge in ``result``,
 or std::nullopt if no solution for this edge is available.)""";
               // Source: drake/geometry/optimization/graph_of_convex_sets.h
-              const char* doc_2args =
+              const char* doc_1cost =
 R"""(Returns the cost associated with the ``cost`` binding on this edge in
 ``result``, or std::nullopt if no solution for this edge is available.
 
 Raises:
     RuntimeError if cost is not associated with this edge.)""";
             } GetSolutionCost;
+            // Symbol: drake::geometry::optimization::GraphOfConvexSets::Edge::GetSolutionCostForAgent
+            struct /* GetSolutionCostForAgent */ {
+              // Source: drake/geometry/optimization/graph_of_convex_sets.h
+              const char* doc_1agentallcosts =
+R"""(Returns the sum of the costs associated with this edge and this
+``agent`` in ``result``, or std::nullopt if no solution for this edge
+is available.)""";
+              // Source: drake/geometry/optimization/graph_of_convex_sets.h
+              const char* doc_1agent1cost =
+R"""(Returns the cost associated with the ``cost`` binding on this edge and
+this ``agent`` in ``result``, or std::nullopt if no solution for this
+edge is available.
+
+Raises:
+    RuntimeError if cost is not associated with this edge.)""";
+            } GetSolutionCostForAgent;
+            // Symbol: drake::geometry::optimization::GraphOfConvexSets::Edge::GetSolutionCostForAllAgents
+            struct /* GetSolutionCostForAllAgents */ {
+              // Source: drake/geometry/optimization/graph_of_convex_sets.h
+              const char* doc_allagentsallcosts =
+R"""(Returns the sum of the costs associated with this edge and every agent
+in ``result``, or std::nullopt if no solution for this edge is
+available.)""";
+              // Source: drake/geometry/optimization/graph_of_convex_sets.h
+              const char* doc_allagents1cost =
+R"""(Returns the cost associated with the ``cost`` binding on this edge and
+every agent in ``result``, or std::nullopt if no solution for this
+edge is available.
+
+Raises:
+    RuntimeError if cost is not associated with this edge for some
+    agents.)""";
+            } GetSolutionCostForAllAgents;
             // Symbol: drake::geometry::optimization::GraphOfConvexSets::Edge::GetSolutionPhiXu
             struct /* GetSolutionPhiXu */ {
               // Source: drake/geometry/optimization/graph_of_convex_sets.h
@@ -2913,6 +3096,20 @@ zero to recover Xu). Second, in the case of a loose convex relaxation,
 the vertex version will return the averaged* value of the edge slacks
 for all non-zero-flow edges.)""";
             } GetSolutionPhiXu;
+            // Symbol: drake::geometry::optimization::GraphOfConvexSets::Edge::GetSolutionPhiXuForAgent
+            struct /* GetSolutionPhiXuForAgent */ {
+              // Source: drake/geometry/optimization/graph_of_convex_sets.h
+              const char* doc =
+R"""(Returns the vector value of the slack variables associated with ϕxᵤ
+and for ``agent`` in ``result``, or std::nullopt if no solution for
+this edge is available. This can obtain a different value than the
+Vertex::GetSolution(), e.g. from ``edge->xu().GetSolution(result)``.
+First, a deactivated edge (defined by Phi ~= 0) will return the zero
+vector here, while Vertex::GetSolution() will return std::nullopt
+(rather than divide by zero to recover Xu). Second, in the case of a
+loose convex relaxation, the vertex version will return the averaged*
+value of the edge slacks for all non-zero-flow edges.)""";
+            } GetSolutionPhiXuForAgent;
             // Symbol: drake::geometry::optimization::GraphOfConvexSets::Edge::GetSolutionPhiXv
             struct /* GetSolutionPhiXv */ {
               // Source: drake/geometry/optimization/graph_of_convex_sets.h
@@ -2921,14 +3118,29 @@ R"""(Returns the vector value of the slack variables associated with ϕxᵥ in
 ``result``, or std::nullopt if no solution for this edge is available.
 See GetSolutionPhiXu() for more details.)""";
             } GetSolutionPhiXv;
+            // Symbol: drake::geometry::optimization::GraphOfConvexSets::Edge::GetSolutionPhiXvForAgent
+            struct /* GetSolutionPhiXvForAgent */ {
+              // Source: drake/geometry/optimization/graph_of_convex_sets.h
+              const char* doc =
+R"""(Returns the vector value of the slack variables associated with ϕxᵥ
+and for ``agent`` in ``result``, or std::nullopt if no solution for
+this edge is available. See GetSolutionPhiXu() for more details.)""";
+            } GetSolutionPhiXvForAgent;
             // Symbol: drake::geometry::optimization::GraphOfConvexSets::Edge::NewSlackVariables
             struct /* NewSlackVariables */ {
               // Source: drake/geometry/optimization/graph_of_convex_sets.h
-              const char* doc =
+              const char* doc_single =
 R"""(Creates continuous slack variables for this edge, appending them to an
 internal vector of existing slack variables. These slack variables can
 be used in any cost or constraint on this edge only, and allows for
 modeling more complex costs and constraints.)""";
+              // Source: drake/geometry/optimization/graph_of_convex_sets.h
+              const char* doc_multi =
+R"""(Creates continuous slack variables for this edge and particular
+``agent``, appending them to an internal vector of existing slack
+variables. These slack variables can be used in any cost or constraint
+on this edge only, and allows for modeling more complex costs and
+constraints.)""";
             } NewSlackVariables;
             // Symbol: drake::geometry::optimization::GraphOfConvexSets::Edge::id
             struct /* id */ {
@@ -2936,6 +3148,12 @@ modeling more complex costs and constraints.)""";
               const char* doc =
 R"""(Returns the unique identifier associated with this Edge.)""";
             } id;
+            // Symbol: drake::geometry::optimization::GraphOfConvexSets::Edge::n_agents
+            struct /* n_agents */ {
+              // Source: drake/geometry/optimization/graph_of_convex_sets.h
+              const char* doc =
+R"""(Returns the number of agents for this edge.)""";
+            } n_agents;
             // Symbol: drake::geometry::optimization::GraphOfConvexSets::Edge::name
             struct /* name */ {
               // Source: drake/geometry/optimization/graph_of_convex_sets.h
@@ -2945,11 +3163,17 @@ R"""(Returns the string name associated with this edge.)""";
             // Symbol: drake::geometry::optimization::GraphOfConvexSets::Edge::phi
             struct /* phi */ {
               // Source: drake/geometry/optimization/graph_of_convex_sets.h
-              const char* doc =
+              const char* doc_single =
 R"""(Returns the binary variable associated with this edge. It can be used
 to determine whether this edge was active in the solution to an
 optimization problem, by calling GetSolution(phi()) on a returned
 MathematicalProgramResult.)""";
+              // Source: drake/geometry/optimization/graph_of_convex_sets.h
+              const char* doc_multi =
+R"""(Returns the binary variable associated with this edge and a specific
+agent. It can be used to determine whether this edge was active for
+this agent in the solution to an optimization problem, by calling
+GetSolution(phi()) on a returned MathematicalProgramResult.)""";
             } phi;
             // Symbol: drake::geometry::optimization::GraphOfConvexSets::Edge::u
             struct /* u */ {
@@ -3033,6 +3257,30 @@ Parameter ``active_path``:
     displayed as dashed edges in red, displayed in addition to the
     original graph edges.)""";
           } GetGraphvizString;
+          // Symbol: drake::geometry::optimization::GraphOfConvexSets::GetGraphvizStringForAgent
+          struct /* GetGraphvizStringForAgent */ {
+            // Source: drake/geometry/optimization/graph_of_convex_sets.h
+            const char* doc =
+R"""(Returns a Graphviz string describing the graph vertices and edges for
+a specific ``agent``. If ``result`` is supplied, then the graph will
+be annotated with the solution values, according to ``options``.
+
+Parameter ``result``:
+    the optional result from a solver.
+
+Parameter ``options``:
+    the struct containing various options for visualization.
+
+Parameter ``agent``:
+    the index of agent that you want to visualize. By default, agent =
+    -1, which indicates showing the sum of flows and costs (,etc.) of
+    all agents.
+
+Parameter ``active_path``:
+    optionally highlights a given path in the graph. The path is
+    displayed as dashed edges in red, displayed in addition to the
+    original graph edges.)""";
+          } GetGraphvizStringForAgent;
           // Symbol: drake::geometry::optimization::GraphOfConvexSets::GetMutableEdgeByName
           struct /* GetMutableEdgeByName */ {
             // Source: drake/geometry/optimization/graph_of_convex_sets.h
@@ -3066,6 +3314,32 @@ Raises:
     RuntimeError if !result.is_success() or no path from ``source`` to
     ``target`` can be found in the solution.)""";
           } GetSolutionPath;
+          // Symbol: drake::geometry::optimization::GraphOfConvexSets::GetSolutionPathForAgent
+          struct /* GetSolutionPathForAgent */ {
+            // Source: drake/geometry/optimization/graph_of_convex_sets.h
+            const char* doc =
+R"""(Extracts a path from ``source`` to ``target`` (for a specific agent
+denoted by ``agent_id``) described by the ``result`` returned by
+SolveShortestPathForAgent(), via depth-first search following the
+largest values of the edge binary variables.
+
+Parameter ``agent_id``:
+    is the specified agent ID.
+
+Parameter ``n_agents``:
+    is the number of agents included in this multi-agent case.
+
+Parameter ``tolerance``:
+    defines the threshold for checking the integrality conditions of
+    the binary variables for each edge. ``tolerance`` = 0 would demand
+    that the binary variables are exactly 1 for the edges on the path.
+    ``tolerance`` = 1 would allow the binary variables to be any value
+    in [0, 1]. The default value is 1e-3.
+
+Raises:
+    RuntimeError if !result.is_success() or no path from ``source`` to
+    ``target`` can be found in the solution.)""";
+          } GetSolutionPathForAgent;
           // Symbol: drake::geometry::optimization::GraphOfConvexSets::GetVertexByName
           struct /* GetVertexByName */ {
             // Source: drake/geometry/optimization/graph_of_convex_sets.h
@@ -3173,6 +3447,42 @@ Returns:
 Raises:
     RuntimeError if options.max_rounded_path < 1.)""";
           } SamplePaths;
+          // Symbol: drake::geometry::optimization::GraphOfConvexSets::SamplePathsForAgent
+          struct /* SamplePathsForAgent */ {
+            // Source: drake/geometry/optimization/graph_of_convex_sets.h
+            const char* doc =
+R"""(Samples a collection of unique paths from ``source`` to ``target`` of
+a specific agent denoted as ``agent_id``, where the flow values (the
+relaxed binary variables associated with each ``Edge`` and for each
+agent) ``flows`` are interpreted as the probabilities of transitioning
+an edge. The returned paths are guaranteed to be unique, and the
+number of returned paths can be 0 if no paths are found. This function
+implements the first part of the rounding scheme put forth in Section
+4.2 of "Motion Planning around Obstacles with Convex Optimization":
+https://arxiv.org/abs/2205.04422
+
+Parameter ``source``:
+    specifies the source vertex for a specific agent.
+
+Parameter ``target``:
+    specifies the target vertex for a specific agent.
+
+Parameter ``agent_id``:
+    specifies the agent ID of the flow.
+
+Parameter ``options``:
+    include all settings for sampling the paths. Specifically, the
+    behavior of this function is determined through
+    ``options.rounding_seed``, `options.max_rounded_paths`,
+    ``options.max_rounding_trials``, and ``options.flow_tolerance``,
+    as described in ``GraphOfConvexSetsOptions``.
+
+Returns:
+    A vector of paths, where each path is a vector of `Edge`s.
+
+Raises:
+    RuntimeError if options.max_rounded_path < 1.)""";
+          } SamplePathsForAgent;
           // Symbol: drake::geometry::optimization::GraphOfConvexSets::SolveConvexRestriction
           struct /* SolveConvexRestriction */ {
             // Source: drake/geometry/optimization/graph_of_convex_sets.h
@@ -3203,6 +3513,15 @@ Raises:
     RuntimeError if the ``initial_guess`` does not contain solutions
     for the decision variables required in this convex restriction.)""";
           } SolveConvexRestriction;
+          // Symbol: drake::geometry::optimization::GraphOfConvexSets::SolveConvexRestrictionForAgent
+          struct /* SolveConvexRestrictionForAgent */ {
+            // Source: drake/geometry/optimization/graph_of_convex_sets.h
+            const char* doc =
+R"""(The agent-specific version of SolveConvexRestriction, with the agent
+specified by the parameter ``agent_id`` and the number of agents
+specified by ``n_agents``. More information see
+``SolveConvexRestriction`` funciton.)""";
+          } SolveConvexRestrictionForAgent;
           // Symbol: drake::geometry::optimization::GraphOfConvexSets::SolveShortestPath
           struct /* SolveShortestPath */ {
             // Source: drake/geometry/optimization/graph_of_convex_sets.h
@@ -3237,6 +3556,45 @@ Raises:
     unsupported. All costs must be non-negative for all values of the
     continuous variables.)""";
           } SolveShortestPath;
+          // Symbol: drake::geometry::optimization::GraphOfConvexSets::SolveShortestPathForMultiAgent
+          struct /* SolveShortestPathForMultiAgent */ {
+            // Source: drake/geometry/optimization/graph_of_convex_sets.h
+            const char* doc =
+R"""(Formulates and solves the mixed-integer convex formulation of the
+multi-agent shortest path problem on the graph, as discussed in detail
+in
+
+"Shortest Paths in Graphs of Convex Sets" by Tobia Marcucci, Jack
+Umenberger, Pablo A. Parrilo, Russ Tedrake.
+https://arxiv.org/abs/2101.11565
+
+Parameter ``sources``:
+    specifies the source sets for each agent. The solver will choose
+    any point in one of those set; to start at a particular continuous
+    state consider adding a Point set to the graph and using that as
+    the source.
+
+Parameter ``targets``:
+    specifies the target sets for each agent. The solver will choose
+    any point in one of those set.
+
+Parameter ``n_agents``:
+    records the number of agents in this problem.
+
+Parameter ``options``:
+    include all settings for solving the shortest path problem. See
+    ``GraphOfConvexSetsOptions`` for further details. The following
+    default options will be used if they are not provided in
+    ``options``: - `options.convex_relaxation = false`, -
+    ``options.max_rounded_paths = 0``, - `options.preprocessing =
+    false`.
+
+Raises:
+    RuntimeError if any of the costs or constraints in the graph are
+    incompatible with the shortest path formulation or otherwise
+    unsupported. All costs must be non-negative for all values of the
+    continuous variables.)""";
+          } SolveShortestPathForMultiAgent;
           // Symbol: drake::geometry::optimization::GraphOfConvexSets::Transcription
           struct /* Transcription */ {
             // Source: drake/geometry/optimization/graph_of_convex_sets.h
@@ -3456,6 +3814,13 @@ Raises:
               const char* doc =
 R"""(Returns the ambient dimension of the ConvexSet.)""";
             } ambient_dimension;
+            // Symbol: drake::geometry::optimization::GraphOfConvexSets::Vertex::full_dimension
+            struct /* full_dimension */ {
+              // Source: drake/geometry/optimization/graph_of_convex_sets.h
+              const char* doc =
+R"""(Returns the full dimension of the ConvexSet, which is
+n_agents*ambient_dimension)""";
+            } full_dimension;
             // Symbol: drake::geometry::optimization::GraphOfConvexSets::Vertex::id
             struct /* id */ {
               // Source: drake/geometry/optimization/graph_of_convex_sets.h
@@ -3467,6 +3832,12 @@ R"""(Returns the unique identifier associated with this Vertex.)""";
               // Source: drake/geometry/optimization/graph_of_convex_sets.h
               const char* doc = R"""()""";
             } incoming_edges;
+            // Symbol: drake::geometry::optimization::GraphOfConvexSets::Vertex::n_agents
+            struct /* n_agents */ {
+              // Source: drake/geometry/optimization/graph_of_convex_sets.h
+              const char* doc =
+R"""(Returns the number of agents of this GCS.)""";
+            } n_agents;
             // Symbol: drake::geometry::optimization::GraphOfConvexSets::Vertex::name
             struct /* name */ {
               // Source: drake/geometry/optimization/graph_of_convex_sets.h
@@ -3491,6 +3862,11 @@ R"""(Returns a decision variable corresponding to an element of the
 ConvexSet, which can be used for constructing symbolic::Expression
 costs and constraints.)""";
             } x;
+            // Symbol: drake::geometry::optimization::GraphOfConvexSets::Vertex::x_at
+            struct /* x_at */ {
+              // Source: drake/geometry/optimization/graph_of_convex_sets.h
+              const char* doc = R"""()""";
+            } x_at;
           } Vertex;
           // Symbol: drake::geometry::optimization::GraphOfConvexSets::VertexId
           struct /* VertexId */ {
