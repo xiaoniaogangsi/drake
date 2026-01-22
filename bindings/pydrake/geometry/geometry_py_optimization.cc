@@ -40,6 +40,7 @@
 #include "drake/geometry/optimization/intersection.h"
 #include "drake/geometry/optimization/iris.h"
 #include "drake/geometry/optimization/minkowski_sum.h"
+#include "drake/geometry/optimization/multi_agent_graph_of_convex_sets.h"   // LIZHUANG ADDED
 #include "drake/geometry/optimization/point.h"
 #include "drake/geometry/optimization/spectrahedron.h"
 #include "drake/geometry/optimization/vpolytope.h"
@@ -672,18 +673,6 @@ void DefineIris(py::module m) {
       py::arg("plant"), py::arg("context"), py::arg("options") = IrisOptions(),
       doc.IrisNp.doc);
 
-// Deprecated 2025-12-01
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
-  m.def("IrisInConfigurationSpace",
-      WrapDeprecated(doc.IrisInConfigurationSpace.doc_deprecated,
-          py::overload_cast<const multibody::MultibodyPlant<double>&,
-              const systems::Context<double>&, const IrisOptions&>(
-              &IrisInConfigurationSpace)),
-      py::arg("plant"), py::arg("context"), py::arg("options") = IrisOptions(),
-      doc.IrisInConfigurationSpace.doc_deprecated);
-#pragma GCC diagnostic pop
-
   // TODO(#19597) Deprecate and remove these functions once Python
   // can natively handle the file I/O.
   m.def(
@@ -848,9 +837,6 @@ void DefineGraphOfConvexSetsAndRelated(py::module m) {
         .def("ambient_dimension", &GraphOfConvexSets::Vertex::ambient_dimension,
             vertex_doc.ambient_dimension.doc)
         .def("name", &GraphOfConvexSets::Vertex::name, vertex_doc.name.doc)
-        .def("n_agents", &GraphOfConvexSets::Vertex::n_agents, vertex_doc.n_agents.doc) // ADDED BY LIZHUANG
-        .def("full_dimension", &GraphOfConvexSets::Vertex::full_dimension, 
-            vertex_doc.full_dimension.doc)   // ADDED BY LIZHUANG
         // As in trajectory_optimization_py.cc, we use a lambda to *copy*
         // the decision variables; otherwise we get dtype=object arrays
         // cannot be referenced.
@@ -912,12 +898,7 @@ void DefineGraphOfConvexSetsAndRelated(py::module m) {
         .def("incoming_edges", &GraphOfConvexSets::Vertex::incoming_edges,
             py_rvp::reference_internal, vertex_doc.incoming_edges.doc)
         .def("outgoing_edges", &GraphOfConvexSets::Vertex::outgoing_edges,
-            py_rvp::reference_internal, vertex_doc.outgoing_edges.doc)
-        // ----- LIZHUANG ADDED HERE -----
-        .def("x_at", &GraphOfConvexSets::Vertex::x_at,
-            py::arg("agent"), py::arg("idx"),
-            vertex_doc.x_at.doc)
-            ;
+            py_rvp::reference_internal, vertex_doc.outgoing_edges.doc);
 
     // Edge
     const auto& edge_doc = doc.GraphOfConvexSets.Edge;
@@ -933,19 +914,8 @@ void DefineGraphOfConvexSetsAndRelated(py::module m) {
             overload_cast_explicit<GraphOfConvexSets::Vertex&>(
                 &GraphOfConvexSets::Edge::v),
             py_rvp::reference_internal, edge_doc.v.doc_0args_nonconst)
-        // .def("phi", &GraphOfConvexSets::Edge::phi, py_rvp::reference_internal,
-        //     edge_doc.phi.doc)
-        .def("phi",
-            overload_cast_explicit<const symbolic::Variable&>(
-                &GraphOfConvexSets::Edge::phi), 
-            py_rvp::reference_internal, edge_doc.phi.doc_single)    //Added
-        .def("phi",
-            overload_cast_explicit<const symbolic::Variable&, int>(
-                &GraphOfConvexSets::Edge::phi), 
-            py::arg("agent"), py_rvp::reference_internal, edge_doc.phi.doc_multi)   //Added
-        .def("n_agents", &GraphOfConvexSets::Edge::n_agents, edge_doc.n_agents.doc) //Added
-        // .def("agent_data", &GraphOfConvexSets::Edge::agent_data, py::arg("agent_id"),
-        //     edge_doc.agent_data.doc)    //ADDED
+        .def("phi", &GraphOfConvexSets::Edge::phi, py_rvp::reference_internal,
+            edge_doc.phi.doc)
         .def(
             "xu",
             [](const GraphOfConvexSets::Edge& self)
@@ -969,12 +939,6 @@ void DefineGraphOfConvexSetsAndRelated(py::module m) {
             py::arg("binding"),
             py::arg("use_in_transcription") = all_transcriptions,
             edge_doc.AddCost.doc_binding)
-        .def("AddCostForAgent",
-            &GraphOfConvexSets::Edge::AddCostForAgent,
-            py::arg("agent"), 
-            py::arg("binding"),
-            py::arg("use_in_transcription") = all_transcriptions,
-            edge_doc.AddCostForAgent.doc)   //Added
         .def("AddConstraint",
             overload_cast_explicit<solvers::Binding<solvers::Constraint>,
                 const symbolic::Formula&,
@@ -990,108 +954,42 @@ void DefineGraphOfConvexSetsAndRelated(py::module m) {
             py::arg("binding"),
             py::arg("use_in_transcription") = all_transcriptions,
             edge_doc.AddConstraint.doc_binding)
-        .def("AddConstraintForAgent",
-            &GraphOfConvexSets::Edge::AddConstraintForAgent,
-            py::arg("agent"),
-            py::arg("binding"),
-            py::arg("use_in_transcription") = all_transcriptions,
-            edge_doc.AddConstraintForAgent.doc)     //Added
         .def("AddPhiConstraint", &GraphOfConvexSets::Edge::AddPhiConstraint,
             py::arg("phi_value"), edge_doc.AddPhiConstraint.doc)
-        .def("AddPhiConstraintForAgent", 
-            &GraphOfConvexSets::Edge::AddPhiConstraintForAgent,
-            py::arg("agent"),
-            py::arg("phi_value"), edge_doc.AddPhiConstraintForAgent.doc)    //Added
         .def("ClearPhiConstraints",
             &GraphOfConvexSets::Edge::ClearPhiConstraints,
             edge_doc.ClearPhiConstraints.doc)
-        .def("ClearPhiConstraintsForAgent",
-            &GraphOfConvexSets::Edge::ClearPhiConstraintsForAgent,
-            py::arg("agent"), edge_doc.ClearPhiConstraintsForAgent.doc)     //Added
-        .def("ClearPhiConstriantForAllAgents",
-            &GraphOfConvexSets::Edge::ClearPhiConstraintsForAllAgents,
-            edge_doc.ClearPhiConstraintsForAllAgents.doc)                   //Added
         .def("GetCosts", &GraphOfConvexSets::Edge::GetCosts,
             py::arg("used_in_transcription") = all_transcriptions,
             edge_doc.GetCosts.doc)
-        .def("GetCostsForAgent", &GraphOfConvexSets::Edge::GetCostsForAgent,
-            py::arg("agent"),
-            py::arg("used_in_transcription") = all_transcriptions,
-            edge_doc.GetCostsForAgent.doc)          //Added
         .def("GetConstraints", &GraphOfConvexSets::Edge::GetConstraints,
             py::arg("used_in_transcription") = all_transcriptions,
             edge_doc.GetConstraints.doc)
-        .def("GetConstraintsForAgent", &GraphOfConvexSets::Edge::GetConstraintsForAgent,
-            py::arg("agent"),
-            py::arg("used_in_transcription") = all_transcriptions,
-            edge_doc.GetConstraintsForAgent.doc)    //Added
         .def("GetSolutionCost",
             overload_cast_explicit<std::optional<double>,
                 const solvers::MathematicalProgramResult&>(
                 &GraphOfConvexSets::Edge::GetSolutionCost),
-            py::arg("result"), edge_doc.GetSolutionCost.doc_allcosts)
+            py::arg("result"), edge_doc.GetSolutionCost.doc_1args)
         .def("GetSolutionCost",
             overload_cast_explicit<std::optional<double>,
                 const solvers::MathematicalProgramResult&,
                 const solvers::Binding<solvers::Cost>&>(
                 &GraphOfConvexSets::Edge::GetSolutionCost),
             py::arg("result"), py::arg("cost"),
-            edge_doc.GetSolutionCost.doc_1cost)
-        .def("GetSolutionCostForAgent",
-            overload_cast_explicit<std::optional<double>,
-                const solvers::MathematicalProgramResult&, int>(
-                &GraphOfConvexSets::Edge::GetSolutionCostForAgent),
-            py::arg("result"), py::arg("agent"),
-            edge_doc.GetSolutionCostForAgent.doc_1agentallcosts)    //Added
-        .def("GetSolutionCostForAgent",
-            overload_cast_explicit<std::optional<double>,
-                const solvers::MathematicalProgramResult&,
-                const solvers::Binding<solvers::Cost>&, int>(
-                &GraphOfConvexSets::Edge::GetSolutionCostForAgent),
-            py::arg("result"), py::arg("cost"), py::arg("agent"),
-            edge_doc.GetSolutionCostForAgent.doc_1agent1cost)       //Added
-        .def("GetSolutionCostForAllAgents",
-            overload_cast_explicit<std::optional<double>,
-                const solvers::MathematicalProgramResult&>(
-                &GraphOfConvexSets::Edge::GetSolutionCostForAllAgents),
-            py::arg("result"), 
-            edge_doc.GetSolutionCostForAllAgents.doc_allagentsallcosts)         //Added
-        .def("GetSolutionCostAllAgents",
-            overload_cast_explicit<std::optional<double>,
-                const solvers::MathematicalProgramResult&,
-                const solvers::Binding<solvers::Cost>&>(
-                &GraphOfConvexSets::Edge::GetSolutionCostForAllAgents),
-            py::arg("result"), py::arg("cost"),
-            edge_doc.GetSolutionCostForAllAgents.doc_allagents1cost)            //Added
+            edge_doc.GetSolutionCost.doc_2args)
         .def("GetSolutionPhiXu", &GraphOfConvexSets::Edge::GetSolutionPhiXu,
             py::arg("result"), edge_doc.GetSolutionPhiXu.doc)
         .def("GetSolutionPhiXv", &GraphOfConvexSets::Edge::GetSolutionPhiXv,
-            py::arg("result"), edge_doc.GetSolutionPhiXv.doc)
-        .def("GetSolutionPhiXuForAgent", &GraphOfConvexSets::Edge::GetSolutionPhiXuForAgent,
-            py::arg("result"), py::arg("agent"), edge_doc.GetSolutionPhiXuForAgent.doc)     //Added
-        .def("GetSolutionPhiXvForAgent", &GraphOfConvexSets::Edge::GetSolutionPhiXvForAgent,
-            py::arg("result"), py::arg("agent"), edge_doc.GetSolutionPhiXvForAgent.doc);    //Added
+            py::arg("result"), edge_doc.GetSolutionPhiXv.doc);
 
     graph_of_convex_sets  // BR
         .def(py::init<>(), cls_doc.ctor.doc)
         .def("num_vertices", &GraphOfConvexSets::num_vertices,
             cls_doc.num_vertices.doc)
         .def("num_edges", &GraphOfConvexSets::num_edges, cls_doc.num_edges.doc)
-        // .def("AddVertex", &GraphOfConvexSets::AddVertex, py::arg("set"),
-        //     py::arg("name") = "", py_rvp::reference_internal,
-        //     cls_doc.AddVertex.doc)
-        .def("AddVertex", 
-            overload_cast_explicit<GraphOfConvexSets::Vertex*, const geometry::optimization::ConvexSet&, std::string>(
-                &GraphOfConvexSets::AddVertex),
-            py::arg("set"), py::arg("name") = "", py_rvp::reference_internal,
-            cls_doc.AddVertex.doc_singleagent)
-        // Added an overload to AddVertex
-        .def("AddVertex", 
-            overload_cast_explicit<GraphOfConvexSets::Vertex*, const geometry::optimization::ConvexSet&, std::string, int>(
-                &GraphOfConvexSets::AddVertex),
-            py::arg("set"), py::arg("name") = "", py::arg("n_agents"), py_rvp::reference_internal,
-            cls_doc.AddVertex.doc_multiagent)
-
+        .def("AddVertex", &GraphOfConvexSets::AddVertex, py::arg("set"),
+            py::arg("name") = "", py_rvp::reference_internal,
+            cls_doc.AddVertex.doc)
         .def("AddVertexFromTemplate", &GraphOfConvexSets::AddVertexFromTemplate,
             py::arg("template_vertex"), py_rvp::reference_internal,
             cls_doc.AddVertexFromTemplate.doc)
@@ -1100,14 +998,7 @@ void DefineGraphOfConvexSetsAndRelated(py::module m) {
                 GraphOfConvexSets::Vertex*, std::string>(
                 &GraphOfConvexSets::AddEdge),
             py::arg("u"), py::arg("v"), py::arg("name") = "",
-            py_rvp::reference_internal, cls_doc.AddEdge.doc_singleagent)
-        //Added an overload to AddEdge
-        .def("AddEdge",
-            py::overload_cast<GraphOfConvexSets::Vertex*,
-                GraphOfConvexSets::Vertex*, std::string, int>(
-                &GraphOfConvexSets::AddEdge),
-            py::arg("u"), py::arg("v"), py::arg("name") = "", py::arg("n_agents"), 
-            py_rvp::reference_internal, cls_doc.AddEdge.doc_multiagent)
+            py_rvp::reference_internal, cls_doc.AddEdge.doc)
         .def("AddEdgeFromTemplate", &GraphOfConvexSets::AddEdgeFromTemplate,
             py::arg("u"), py::arg("v"), py::arg("template_edge"),
             py_rvp::reference_internal, cls_doc.AddEdgeFromTemplate.doc)
@@ -1187,49 +1078,6 @@ void DefineGraphOfConvexSetsAndRelated(py::module m) {
             py::arg("active_path") =
                 std::vector<const GraphOfConvexSets::Edge*>(),
             cls_doc.GetGraphvizString.doc)
-        // ------ LIZHUANG ADDED ------
-        .def(
-            "GetGraphvizStringForAgent",
-            [](const GraphOfConvexSets& self,
-                const solvers::MathematicalProgramResult* result,
-                const GcsGraphvizOptions& options,
-                // Pass by value to resolve #21816.
-                int agent,
-                std::vector<const GraphOfConvexSets::Edge*> active_path) {
-              return self.GetGraphvizStringForAgent(result, options, agent, &active_path);
-            },
-            py::arg("result") = nullptr,
-            py::arg("options") = GcsGraphvizOptions(),
-            py::arg("agent") = -1,
-            py::arg("active_path") =
-                std::vector<const GraphOfConvexSets::Edge*>(),
-            cls_doc.GetGraphvizStringForAgent.doc)
-        .def(
-            "GetGraphvizStringForAgent",
-            [](const GraphOfConvexSets& self,
-                const solvers::MathematicalProgramResult* result,
-                bool show_slacks, bool show_vars, bool show_flows,
-                bool show_costs, bool scientific, int precision,
-                // Pass by value to resolve #21816.
-                int agent,
-                std::vector<const GraphOfConvexSets::Edge*> active_path) {
-              const GcsGraphvizOptions options{.show_slacks = show_slacks,
-                  .show_vars = show_vars,
-                  .show_flows = show_flows,
-                  .show_costs = show_costs,
-                  .scientific = scientific,
-                  .precision = precision};
-              return self.GetGraphvizStringForAgent(result, options, agent, &active_path);
-            },
-            py::arg("result") = nullptr, py::arg("show_slacks") = true,
-            py::arg("show_vars") = true, py::arg("show_flows") = true,
-            py::arg("show_costs") = true, py::arg("scientific") = false,
-            py::arg("precision") = 3,
-            py::arg("agent") = -1,
-            py::arg("active_path") =
-                std::vector<const GraphOfConvexSets::Edge*>(),
-            cls_doc.GetGraphvizStringForAgent.doc)
-        // ----------------------------
         .def("SolveShortestPath",
             overload_cast_explicit<solvers::MathematicalProgramResult,
                 const GraphOfConvexSets::Vertex&,
@@ -1241,29 +1089,10 @@ void DefineGraphOfConvexSetsAndRelated(py::module m) {
             cls_doc.SolveShortestPath.doc,
             // Parallelism may be used when solving, so we must release the GIL.
             py::call_guard<py::gil_scoped_release>())
-        // LIZHUANG ADDED SolveShortestPathForMultiAgent
-        .def("SolveShortestPathForMultiAgent",
-            overload_cast_explicit<solvers::MathematicalProgramResult,
-                const std::vector<GraphOfConvexSets::Vertex*>&,
-                const std::vector<GraphOfConvexSets::Vertex*>&,
-                int,
-                const GraphOfConvexSetsOptions&>(
-                &GraphOfConvexSets::SolveShortestPathForMultiAgent),
-            py::arg("sources"), py::arg("targets"), py::arg("n_agents"),
-            py::arg("specified_options") = GraphOfConvexSetsOptions(),
-            cls_doc.SolveShortestPathForMultiAgent.doc,
-            // Parallelism may be used when solving, so we must release the GIL.
-            py::call_guard<py::gil_scoped_release>())
         .def("GetSolutionPath", &GraphOfConvexSets::GetSolutionPath,
             py::arg("source"), py::arg("target"), py::arg("result"),
             py::arg("tolerance") = 1e-3, py_rvp::reference_internal,
             cls_doc.GetSolutionPath.doc)
-        .def("GetSolutionPathForAgent", &GraphOfConvexSets::GetSolutionPathForAgent,
-            py::arg("source"), py::arg("target"), 
-            py::arg("agent_id"), py::arg("n_agents"),
-            py::arg("result"),
-            py::arg("tolerance") = 1e-3, py_rvp::reference_internal,
-            cls_doc.GetSolutionPathForAgent.doc)
         .def("SamplePaths",
             overload_cast_explicit<
                 std::vector<std::vector<const GraphOfConvexSets::Edge*>>,
@@ -1287,27 +1116,401 @@ void DefineGraphOfConvexSetsAndRelated(py::module m) {
             py::arg("source"), py::arg("target"), py::arg("result"),
             py::arg("options"), py::return_value_policy::reference_internal,
             cls_doc.SamplePaths.doc_result)
-        .def("SamplePathsForAgent",
-            &GraphOfConvexSets::SamplePathsForAgent, 
-            py::arg("source"), py::arg("target"), py::arg("agent_id"),
-            py::arg("result"), py::arg("options"),
-            py::return_value_policy::reference_internal,
-            cls_doc.SamplePathsForAgent.doc)
         .def("SolveConvexRestriction",
             &GraphOfConvexSets::SolveConvexRestriction, py::arg("active_edges"),
             py::arg("options") = GraphOfConvexSetsOptions(),
             py::arg("initial_guess") = nullptr,
-            cls_doc.SolveConvexRestriction.doc)
-        // LIZHUANG ADDED
+            cls_doc.SolveConvexRestriction.doc);
+    DefClone(&graph_of_convex_sets);
+  }
+
+// MultiAgentGraphOfConvexSets
+  {
+    const std::unordered_set<MultiAgentGraphOfConvexSets::Transcription>
+        all_transcriptions = {MultiAgentGraphOfConvexSets::Transcription::kMIP,
+            MultiAgentGraphOfConvexSets::Transcription::kRelaxation,
+            MultiAgentGraphOfConvexSets::Transcription::kRestriction};
+
+    const auto& cls_doc = doc.MultiAgentGraphOfConvexSets;
+    py::class_<MultiAgentGraphOfConvexSets> multi_agent_graph_of_convex_sets(
+        m, "MultiAgentGraphOfConvexSets", cls_doc.doc);
+
+    // ERROR: Identifier VertexId (or EdgeId) can only be bound once
+    // BindIdentifier<MultiAgentGraphOfConvexSets::VertexId>(
+    //     multi_agent_graph_of_convex_sets, "VertexId", doc.MultiAgentGraphOfConvexSets.VertexId.doc);
+    // BindIdentifier<MultiAgentGraphOfConvexSets::EdgeId>(
+    //     multi_agent_graph_of_convex_sets, "EdgeId", doc.MultiAgentGraphOfConvexSets.EdgeId.doc);
+
+    // Make VertexId and EdgeId attributes available in MultiAgentGraphOfConvexSets class.
+    auto gcs_vertex_id = m.attr("GraphOfConvexSets").attr("VertexId");
+    auto gcs_edge_id   = m.attr("GraphOfConvexSets").attr("EdgeId");
+    multi_agent_graph_of_convex_sets.attr("VertexId") = gcs_vertex_id;
+    multi_agent_graph_of_convex_sets.attr("EdgeId")   = gcs_edge_id;
+
+    // Transcription
+    constexpr auto& enum_doc = doc.MultiAgentGraphOfConvexSets.Transcription;
+    py::enum_<MultiAgentGraphOfConvexSets::Transcription> enum_py(
+        multi_agent_graph_of_convex_sets, "Transcription", enum_doc.doc);
+    enum_py  // BR
+        .value(
+            "kMIP", MultiAgentGraphOfConvexSets::Transcription::kMIP, enum_doc.kMIP.doc)
+        .value("kRelaxation", MultiAgentGraphOfConvexSets::Transcription::kRelaxation,
+            enum_doc.kRelaxation.doc)
+        .value("kRestriction", MultiAgentGraphOfConvexSets::Transcription::kRestriction,
+            enum_doc.kRestriction.doc);
+
+    // Vertex
+    const auto& vertex_doc = doc.MultiAgentGraphOfConvexSets.Vertex;
+    py::class_<MultiAgentGraphOfConvexSets::Vertex>(
+        multi_agent_graph_of_convex_sets, "Vertex", vertex_doc.doc)
+        .def("id", &MultiAgentGraphOfConvexSets::Vertex::id, vertex_doc.id.doc)
+        .def("ambient_dimension", &MultiAgentGraphOfConvexSets::Vertex::ambient_dimension,
+            vertex_doc.ambient_dimension.doc)
+        .def("name", &MultiAgentGraphOfConvexSets::Vertex::name, vertex_doc.name.doc)
+        .def("n_agents", &MultiAgentGraphOfConvexSets::Vertex::n_agents, vertex_doc.n_agents.doc)   // LIZHUANG ADDED
+        .def("full_dimension", &MultiAgentGraphOfConvexSets::Vertex::full_dimension, 
+            vertex_doc.full_dimension.doc) //LIZHUANG ADDED
+        // As in trajectory_optimization_py.cc, we use a lambda to *copy*
+        // the decision variables; otherwise we get dtype=object arrays
+        // cannot be referenced.
+        .def(
+            "x",
+            [](const MultiAgentGraphOfConvexSets::Vertex& self)
+                -> const VectorX<symbolic::Variable> { return self.x(); },
+            vertex_doc.x.doc)
+        .def("set", &MultiAgentGraphOfConvexSets::Vertex::set, py_rvp::reference_internal,
+            vertex_doc.set.doc)
+        .def("AddCost",
+            py::overload_cast<const symbolic::Expression&,
+                const std::unordered_set<MultiAgentGraphOfConvexSets::Transcription>&>(
+                &MultiAgentGraphOfConvexSets::Vertex::AddCost),
+            py::arg("e"), py::arg("use_in_transcription") = all_transcriptions,
+            vertex_doc.AddCost.doc_expression)
+        .def("AddCost",
+            py::overload_cast<const solvers::Binding<solvers::Cost>&,
+                const std::unordered_set<MultiAgentGraphOfConvexSets::Transcription>&>(
+                &MultiAgentGraphOfConvexSets::Vertex::AddCost),
+            py::arg("binding"),
+            py::arg("use_in_transcription") = all_transcriptions,
+            vertex_doc.AddCost.doc_binding)
+        .def("AddConstraint",
+            overload_cast_explicit<solvers::Binding<solvers::Constraint>,
+                const symbolic::Formula&,
+                const std::unordered_set<MultiAgentGraphOfConvexSets::Transcription>&>(
+                &MultiAgentGraphOfConvexSets::Vertex::AddConstraint),
+            py::arg("f"), py::arg("use_in_transcription") = all_transcriptions,
+            vertex_doc.AddConstraint.doc_formula)
+        .def("AddConstraint",
+            overload_cast_explicit<solvers::Binding<solvers::Constraint>,
+                const solvers::Binding<solvers::Constraint>&,
+                const std::unordered_set<MultiAgentGraphOfConvexSets::Transcription>&>(
+                &MultiAgentGraphOfConvexSets::Vertex::AddConstraint),
+            py::arg("binding"),
+            py::arg("use_in_transcription") = all_transcriptions,
+            vertex_doc.AddConstraint.doc_binding)
+        .def("GetCosts", &MultiAgentGraphOfConvexSets::Vertex::GetCosts,
+            py::arg("used_in_transcription") = all_transcriptions,
+            vertex_doc.GetCosts.doc)
+        .def("GetConstraints", &MultiAgentGraphOfConvexSets::Vertex::GetConstraints,
+            py::arg("used_in_transcription") = all_transcriptions,
+            vertex_doc.GetConstraints.doc)
+        .def("GetSolutionCost",
+            overload_cast_explicit<std::optional<double>,
+                const solvers::MathematicalProgramResult&>(
+                &MultiAgentGraphOfConvexSets::Vertex::GetSolutionCost),
+            py::arg("result"), vertex_doc.GetSolutionCost.doc_1args)
+        .def("GetSolutionCost",
+            overload_cast_explicit<std::optional<double>,
+                const solvers::MathematicalProgramResult&,
+                const solvers::Binding<solvers::Cost>&>(
+                &MultiAgentGraphOfConvexSets::Vertex::GetSolutionCost),
+            py::arg("result"), py::arg("cost"),
+            vertex_doc.GetSolutionCost.doc_2args)
+        .def("GetSolution", &MultiAgentGraphOfConvexSets::Vertex::GetSolution,
+            py::arg("result"), vertex_doc.GetSolution.doc)
+        .def("incoming_edges", &MultiAgentGraphOfConvexSets::Vertex::incoming_edges,
+            py_rvp::reference_internal, vertex_doc.incoming_edges.doc)
+        .def("outgoing_edges", &MultiAgentGraphOfConvexSets::Vertex::outgoing_edges,
+            py_rvp::reference_internal, vertex_doc.outgoing_edges.doc)
+        .def("x_at", &MultiAgentGraphOfConvexSets::Vertex::x_at,
+            py::arg("agent"), py::arg("idx"),
+            vertex_doc.x_at.doc);
+
+    // Edge
+    const auto& edge_doc = doc.MultiAgentGraphOfConvexSets.Edge;
+    py::class_<MultiAgentGraphOfConvexSets::Edge>(
+        multi_agent_graph_of_convex_sets, "Edge", edge_doc.doc)
+        .def("id", &MultiAgentGraphOfConvexSets::Edge::id, edge_doc.id.doc)
+        .def("name", &MultiAgentGraphOfConvexSets::Edge::name, edge_doc.name.doc)
+        .def("u",
+            overload_cast_explicit<MultiAgentGraphOfConvexSets::Vertex&>(
+                &MultiAgentGraphOfConvexSets::Edge::u),
+            py_rvp::reference_internal, edge_doc.u.doc_0args_nonconst)
+        .def("v",
+            overload_cast_explicit<MultiAgentGraphOfConvexSets::Vertex&>(
+                &MultiAgentGraphOfConvexSets::Edge::v),
+            py_rvp::reference_internal, edge_doc.v.doc_0args_nonconst)
+        .def("phi", &MultiAgentGraphOfConvexSets::Edge::phi, 
+            py::arg("agent"), py_rvp::reference_internal,
+            edge_doc.phi.doc)
+        .def(
+            "xu",
+            [](const MultiAgentGraphOfConvexSets::Edge& self)
+                -> const VectorX<symbolic::Variable> { return self.xu(); },
+            edge_doc.xu.doc)
+        .def(
+            "xv",
+            [](const MultiAgentGraphOfConvexSets::Edge& self)
+                -> const VectorX<symbolic::Variable> { return self.xv(); },
+            edge_doc.xv.doc)
+        .def("AddCostForAgent",
+            py::overload_cast<int, const symbolic::Expression&,
+                const std::unordered_set<MultiAgentGraphOfConvexSets::Transcription>&>(
+                &MultiAgentGraphOfConvexSets::Edge::AddCostForAgent),
+            py::arg("agent"), py::arg("e"), py::arg("use_in_transcription") = all_transcriptions,
+            edge_doc.AddCostForAgent.doc_expression)
+        .def("AddCostForAgent",
+            py::overload_cast<int, const solvers::Binding<solvers::Cost>&,
+                const std::unordered_set<MultiAgentGraphOfConvexSets::Transcription>&>(
+                &MultiAgentGraphOfConvexSets::Edge::AddCostForAgent),
+            py::arg("agent"), py::arg("binding"),
+            py::arg("use_in_transcription") = all_transcriptions,
+            edge_doc.AddCostForAgent.doc_binding)
+        .def("AddConstraintForAgent",
+            overload_cast_explicit<solvers::Binding<solvers::Constraint>,
+                int,
+                const symbolic::Formula&,
+                const std::unordered_set<MultiAgentGraphOfConvexSets::Transcription>&>(
+                &MultiAgentGraphOfConvexSets::Edge::AddConstraintForAgent),
+            py::arg("agent"), py::arg("f"), py::arg("use_in_transcription") = all_transcriptions,
+            edge_doc.AddConstraintForAgent.doc_formula)
+        .def("AddConstraintForAgent",
+            overload_cast_explicit<solvers::Binding<solvers::Constraint>,
+                int,    
+                const solvers::Binding<solvers::Constraint>&,
+                const std::unordered_set<MultiAgentGraphOfConvexSets::Transcription>&>(
+                &MultiAgentGraphOfConvexSets::Edge::AddConstraintForAgent),
+            py::arg("agent"), py::arg("binding"),
+            py::arg("use_in_transcription") = all_transcriptions,
+            edge_doc.AddConstraintForAgent.doc_binding)
+        .def("AddPhiConstraintForAgent", &MultiAgentGraphOfConvexSets::Edge::AddPhiConstraintForAgent,
+            py::arg("agent"), py::arg("phi_value"), edge_doc.AddPhiConstraintForAgent.doc)
+        .def("ClearPhiConstraintsForAgent",
+            &MultiAgentGraphOfConvexSets::Edge::ClearPhiConstraintsForAgent,
+            py::arg("agent"),
+            edge_doc.ClearPhiConstraintsForAgent.doc)
+        .def("ClearPhiConstraintsForAllAgents", 
+            &MultiAgentGraphOfConvexSets::Edge::ClearPhiConstraintsForAllAgents,
+            edge_doc.ClearPhiConstraintsForAllAgents.doc)
+        .def("GetCosts", &MultiAgentGraphOfConvexSets::Edge::GetCosts,
+            py::arg("used_in_transcription") = all_transcriptions,
+            edge_doc.GetCosts.doc)
+        .def("GetCostsForAgent", &MultiAgentGraphOfConvexSets::Edge::GetCostsForAgent,
+            py::arg("agent"),
+            py::arg("used_in_transcription") = all_transcriptions,
+            edge_doc.GetCostsForAgent.doc)
+        .def("GetConstraints", &MultiAgentGraphOfConvexSets::Edge::GetConstraints,
+            py::arg("used_in_transcription") = all_transcriptions,
+            edge_doc.GetConstraints.doc)
+        .def("GetConstraintsForAgent", &MultiAgentGraphOfConvexSets::Edge::GetConstraintsForAgent,
+            py::arg("agent"),
+            py::arg("used_in_transcription") = all_transcriptions,
+            edge_doc.GetConstraintsForAgent.doc)
+        .def("GetSolutionCostForAgent",
+            overload_cast_explicit<std::optional<double>,
+                const solvers::MathematicalProgramResult&, int>(
+                &MultiAgentGraphOfConvexSets::Edge::GetSolutionCostForAgent),
+            py::arg("result"), py::arg("agent"), 
+            edge_doc.GetSolutionCostForAgent.doc_1agentallcosts)
+        .def("GetSolutionCostForAgent",
+            overload_cast_explicit<std::optional<double>,
+                const solvers::MathematicalProgramResult&,
+                const solvers::Binding<solvers::Cost>&, int>(
+                &MultiAgentGraphOfConvexSets::Edge::GetSolutionCostForAgent),
+            py::arg("result"), py::arg("cost"), py::arg("agent"),
+            edge_doc.GetSolutionCostForAgent.doc_1agent1cost)
+        .def("GetSolutionCostForAllAgents",
+            overload_cast_explicit<std::optional<double>,
+                const solvers::MathematicalProgramResult&>(
+                &MultiAgentGraphOfConvexSets::Edge::GetSolutionCostForAllAgents),
+            py::arg("result"), 
+            edge_doc.GetSolutionCostForAllAgents.doc_allagentsallcosts)
+        .def("GetSolutionCostForAllAgents",
+            overload_cast_explicit<std::optional<double>,
+                const solvers::MathematicalProgramResult&,
+                const solvers::Binding<solvers::Cost>&>(
+                &MultiAgentGraphOfConvexSets::Edge::GetSolutionCostForAllAgents),
+            py::arg("result"), py::arg("cost"),
+            edge_doc.GetSolutionCostForAllAgents.doc_allagents1cost)        
+        .def("GetSolutionPhiXuForAgent", &MultiAgentGraphOfConvexSets::Edge::GetSolutionPhiXuForAgent,
+            py::arg("result"), py::arg("agent"), edge_doc.GetSolutionPhiXuForAgent.doc)
+        .def("GetSolutionPhiXvForAgent", &MultiAgentGraphOfConvexSets::Edge::GetSolutionPhiXvForAgent,
+            py::arg("result"), py::arg("agent"), edge_doc.GetSolutionPhiXvForAgent.doc);
+
+    multi_agent_graph_of_convex_sets  // BR
+        .def(py::init<>(), cls_doc.ctor.doc)
+        .def("num_vertices", &MultiAgentGraphOfConvexSets::num_vertices,
+            cls_doc.num_vertices.doc)
+        .def("num_edges", &MultiAgentGraphOfConvexSets::num_edges, cls_doc.num_edges.doc)
+        .def("num_agents", &MultiAgentGraphOfConvexSets::num_agents, cls_doc.num_agents.doc)    // LIZHUANG ADDED
+        .def("set_num_agents", &MultiAgentGraphOfConvexSets::set_num_agents, 
+            py::arg("n_agents"), cls_doc.set_num_agents.doc)    // LIZHUANG ADDED
+        .def("AddVertex", 
+            overload_cast_explicit<MultiAgentGraphOfConvexSets::Vertex*,
+                const ConvexSet&, std::string>(
+                &MultiAgentGraphOfConvexSets::AddVertex),
+            py::arg("set"),
+            py::arg("name") = "", py_rvp::reference_internal,
+            cls_doc.AddVertex.doc_singleagent)                  // LIZHUANG MODIFIED
+        .def("AddVertex", 
+            overload_cast_explicit<MultiAgentGraphOfConvexSets::Vertex*,
+                const ConvexSet&, std::string, int>(
+                &MultiAgentGraphOfConvexSets::AddVertex),
+            py::arg("set"),
+            py::arg("name"),
+            py::arg("n_agents"), py_rvp::reference_internal,
+            cls_doc.AddVertex.doc_multiagent)                   // LIZHUANG ADDED
+        .def("AddVertexFromTemplate", &MultiAgentGraphOfConvexSets::AddVertexFromTemplate,
+            py::arg("template_vertex"), py_rvp::reference_internal,
+            cls_doc.AddVertexFromTemplate.doc)
+        .def("AddEdge",
+            py::overload_cast<MultiAgentGraphOfConvexSets::Vertex*,
+                MultiAgentGraphOfConvexSets::Vertex*, std::string, int>(
+                &MultiAgentGraphOfConvexSets::AddEdge),
+            py::arg("u"), py::arg("v"), py::arg("name"), py::arg("n_agents"),
+            py_rvp::reference_internal, cls_doc.AddEdge.doc)
+        .def("AddEdgeFromTemplate", &MultiAgentGraphOfConvexSets::AddEdgeFromTemplate,
+            py::arg("u"), py::arg("v"), py::arg("template_edge"),
+            py_rvp::reference_internal, cls_doc.AddEdgeFromTemplate.doc)
+        .def("GetVertexByName", &MultiAgentGraphOfConvexSets::GetVertexByName,
+            py::arg("name"), py_rvp::reference_internal,
+            cls_doc.GetVertexByName.doc)
+        .def("GetMutableVertexByName",
+            &MultiAgentGraphOfConvexSets::GetMutableVertexByName, py::arg("name"),
+            py_rvp::reference_internal, cls_doc.GetMutableVertexByName.doc)
+        .def("GetEdgeByName", &MultiAgentGraphOfConvexSets::GetEdgeByName,
+            py::arg("name"), py_rvp::reference_internal,
+            cls_doc.GetEdgeByName.doc)
+        .def("GetMutableEdgeByName", &MultiAgentGraphOfConvexSets::GetMutableEdgeByName,
+            py::arg("name"), py_rvp::reference_internal,
+            cls_doc.GetMutableEdgeByName.doc)
+        .def("RemoveVertex",
+            py::overload_cast<MultiAgentGraphOfConvexSets::Vertex*>(
+                &MultiAgentGraphOfConvexSets::RemoveVertex),
+            py::arg("vertex"), cls_doc.RemoveVertex.doc)
+        .def("RemoveEdge",
+            py::overload_cast<MultiAgentGraphOfConvexSets::Edge*>(
+                &MultiAgentGraphOfConvexSets::RemoveEdge),
+            py::arg("edge"), cls_doc.RemoveEdge.doc)
+        .def("Vertices",
+            overload_cast_explicit<std::vector<MultiAgentGraphOfConvexSets::Vertex*>>(
+                &MultiAgentGraphOfConvexSets::Vertices),
+            py_rvp::reference_internal, cls_doc.Vertices.doc)
+        .def("Edges",
+            overload_cast_explicit<std::vector<MultiAgentGraphOfConvexSets::Edge*>>(
+                &MultiAgentGraphOfConvexSets::Edges),
+            py_rvp::reference_internal, cls_doc.Edges.doc)
+        .def("IsValid",
+            overload_cast_explicit<bool, const MultiAgentGraphOfConvexSets::Vertex&>(
+                &MultiAgentGraphOfConvexSets::IsValid),
+            py::arg("v"), cls_doc.IsValid.doc_vertex)
+        .def("IsValid",
+            overload_cast_explicit<bool, const MultiAgentGraphOfConvexSets::Edge&>(
+                &MultiAgentGraphOfConvexSets::IsValid),
+            py::arg("e"), cls_doc.IsValid.doc_edge)
+        .def("ClearAllPhiConstraints",
+            &MultiAgentGraphOfConvexSets::ClearAllPhiConstraints,
+            cls_doc.ClearAllPhiConstraints.doc)
+        .def(
+            "GetGraphvizStringForAgent",
+            [](const MultiAgentGraphOfConvexSets& self,
+                const solvers::MathematicalProgramResult* result,
+                const GcsGraphvizOptions& options,
+                int agent,
+                // Pass by value to resolve #21816.
+                std::vector<const MultiAgentGraphOfConvexSets::Edge*> active_path) {
+              return self.GetGraphvizStringForAgent(result, options, agent, &active_path);
+            },
+            py::arg("result") = nullptr,
+            py::arg("options") = GcsGraphvizOptions(),
+            py::arg("agent") = -1,
+            py::arg("active_path") =
+                std::vector<const MultiAgentGraphOfConvexSets::Edge*>(),
+            cls_doc.GetGraphvizStringForAgent.doc)
+        .def(
+            "GetGraphvizStringForAgent",
+            [](const MultiAgentGraphOfConvexSets& self,
+                const solvers::MathematicalProgramResult* result,
+                bool show_slacks, bool show_vars, bool show_flows,
+                bool show_costs, bool scientific, int precision,
+                int agent,
+                // Pass by value to resolve #21816.
+                std::vector<const MultiAgentGraphOfConvexSets::Edge*> active_path) {
+              const GcsGraphvizOptions options{.show_slacks = show_slacks,
+                  .show_vars = show_vars,
+                  .show_flows = show_flows,
+                  .show_costs = show_costs,
+                  .scientific = scientific,
+                  .precision = precision};
+              return self.GetGraphvizStringForAgent(result, options, agent, &active_path);
+            },
+            py::arg("result") = nullptr, py::arg("show_slacks") = true,
+            py::arg("show_vars") = true, py::arg("show_flows") = true,
+            py::arg("show_costs") = true, py::arg("scientific") = false,
+            py::arg("precision") = 3,
+            py::arg("agent") = -1,
+            py::arg("active_path") =
+                std::vector<const MultiAgentGraphOfConvexSets::Edge*>(),
+            cls_doc.GetGraphvizStringForAgent.doc)
+        .def("SolveShortestPathForMultiAgent",
+            overload_cast_explicit<solvers::MathematicalProgramResult,
+                const std::vector<MultiAgentGraphOfConvexSets::Vertex*>&,
+                const std::vector<MultiAgentGraphOfConvexSets::Vertex*>&,
+                int,
+                const GraphOfConvexSetsOptions&>(
+                &MultiAgentGraphOfConvexSets::SolveShortestPathForMultiAgent),
+            py::arg("sources"), py::arg("targets"), py::arg("n_agents"),
+            py::arg("options") = GraphOfConvexSetsOptions(),
+            cls_doc.SolveShortestPathForMultiAgent.doc,
+            // Parallelism may be used when solving, so we must release the GIL.
+            py::call_guard<py::gil_scoped_release>())
+        .def("GetSolutionPathForAgent", &MultiAgentGraphOfConvexSets::GetSolutionPathForAgent,
+            py::arg("source"), py::arg("target"),
+            py::arg("agent_id"), py::arg("n_agents"), py::arg("result"),
+            py::arg("tolerance") = 1e-3, py_rvp::reference_internal,
+            cls_doc.GetSolutionPathForAgent.doc)
+        .def("SamplePaths",
+            overload_cast_explicit<
+                std::vector<std::vector<const MultiAgentGraphOfConvexSets::Edge*>>,
+                const MultiAgentGraphOfConvexSets::Vertex&,
+                const MultiAgentGraphOfConvexSets::Vertex&,
+                const std::unordered_map<const MultiAgentGraphOfConvexSets::Edge*,
+                    double>&,
+                const GraphOfConvexSetsOptions&>(
+                &MultiAgentGraphOfConvexSets::SamplePaths),
+            py::arg("source"), py::arg("target"), py::arg("flows"),
+            py::arg("options"), py::return_value_policy::reference_internal,
+            cls_doc.SamplePaths.doc_flows)
+        .def("SamplePathsForAgent",
+            overload_cast_explicit<
+                std::vector<std::vector<const MultiAgentGraphOfConvexSets::Edge*>>,
+                const MultiAgentGraphOfConvexSets::Vertex&,
+                const MultiAgentGraphOfConvexSets::Vertex&,
+                const int,
+                const solvers::MathematicalProgramResult&,
+                const GraphOfConvexSetsOptions&>(
+                &MultiAgentGraphOfConvexSets::SamplePathsForAgent),
+            py::arg("source"), py::arg("target"), py::arg("agent_id"), py::arg("result"),
+            py::arg("options"), py::return_value_policy::reference_internal,
+            cls_doc.SamplePathsForAgent.doc_result)
         .def("SolveConvexRestrictionForAgent",
-            &GraphOfConvexSets::SolveConvexRestrictionForAgent, 
+            &MultiAgentGraphOfConvexSets::SolveConvexRestrictionForAgent, 
             py::arg("active_edges"),
-            py::arg("agent_id"),
-            py::arg("n_agents"),
+            py::arg("agent_id"), py::arg("n_agents"),
             py::arg("options") = GraphOfConvexSetsOptions(),
             py::arg("initial_guess") = nullptr,
             cls_doc.SolveConvexRestrictionForAgent.doc);
-    DefClone(&graph_of_convex_sets);
+    DefClone(&multi_agent_graph_of_convex_sets);
   }
 
   // Trampoline class to support deriving from ImplicitGraphOfConvexSets in

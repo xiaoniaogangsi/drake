@@ -19,160 +19,14 @@
 #include "drake/solvers/solver_interface.h"
 #include "drake/solvers/solver_options.h"
 
+#include "drake/geometry/optimization/graph_of_convex_sets.h"
+
 namespace drake {
 namespace geometry {
 namespace optimization {
 
-struct GraphOfConvexSetsOptions {
-  /** Passes this object to an Archive.
-  Refer to @ref yaml_serialization "YAML Serialization" for background. Note:
-  This only serializes options that are YAML built-in types.  */
-  template <typename Archive>
-  void Serialize(Archive* a) {
-    a->Visit(DRAKE_NVP(convex_relaxation));
-    a->Visit(DRAKE_NVP(max_rounded_paths));
-    a->Visit(DRAKE_NVP(preprocessing));
-    a->Visit(DRAKE_NVP(max_rounding_trials));
-    a->Visit(DRAKE_NVP(flow_tolerance));
-    a->Visit(DRAKE_NVP(rounding_seed));
-    // N.B. We skip the DRAKE_NVP(solver), DRAKE_NVP(restriction_solver), and
-    // DRAKE_NVP(preprocessing_solver), because it cannot be serialized.
-    // TODO(#20967) Serialize the DRAKE_NVP(solver_options).
-    // TODO(#20967) Serialize the DRAKE_NVP(restriction_solver_options).
-    // TODO(#20967) Serialize the DRAKE_NVP(preprocessing_solver_options).
-  }
-
-  /** Flag to solve the relaxed version of the problem.  As discussed in the
-  paper, we know that this relaxation cannot solve the original NP-hard problem
-  for all instances, but there are also many instances for which the convex
-  relaxation is tight. If convex_relaxation=nullopt, then each GCS method is
-  free to choose an appropriate default. */
-  std::optional<bool> convex_relaxation{std::nullopt};
-
-  /** Maximum number of distinct paths to compare during random rounding; only
-  the lowest cost path is returned. If convex_relaxation is false or this is
-  less than or equal to zero, rounding is not performed. If
-  max_rounded_paths=nullopt, then each GCS method is free to choose an
-  appropriate default. */
-  std::optional<int> max_rounded_paths{std::nullopt};
-
-  /** Performs a preprocessing step to remove edges that cannot lie on the
-  path from source to target. In most cases, preprocessing causes a net
-  reduction in computation by reducing the size of the optimization solved.
-  Note that this preprocessing is not exact. There may be edges that cannot
-  lie on the path from source to target that this does not detect. If
-  preprocessing=nullopt, then each GCS method is free to choose an appropriate
-  default. */
-  std::optional<bool> preprocessing{std::nullopt};
-
-  /** Maximum number of trials to find a novel path during random rounding. If
-  convex_relaxation is false or max_rounded_paths is less than or equal to zero,
-  this option is ignored. */
-  int max_rounding_trials{100};
-
-  /** Tolerance for ignoring flow along a given edge during random rounding. If
-  convex_relaxation is false or max_rounded_paths is less than or equal to zero,
-  this option is ignored. */
-  double flow_tolerance{1e-5};
-
-  /** Random seed to use for random rounding. If convex_relaxation is false or
-  max_rounded_paths is less than or equal to zero, this option is ignored. */
-  int rounding_seed{0};
-
-  // TODO(#20969) The following solver interfaces may need to be moved to fully
-  // serialize the options.
-
-  /** Optimizer to be used to solve the MIP, the relaxation of the shortest path
-  optimization problem and the convex restriction if no restriction_solver is
-  provided. If not set, the best solver for the given problem is selected.
-  Note that if the solver cannot handle the type of optimization problem
-  generated, the calling solvers::SolverInterface::Solve()  method will
-  throw. */
-  const solvers::SolverInterface* solver{nullptr};
-
-  /** Optimizer to be used in SolveConvexRestriction(), which is also called
-  during the rounding stage of SolveShortestPath() given the relaxation.
-  If not set, the interface at .solver will be used, if provided, otherwise the
-  best solver for the given problem is selected. Note that if the solver cannot
-  handle the type of optimization problem generated, then calling the
-  solvers::SolverInterface::Solve() method will throw. */
-  const solvers::SolverInterface* restriction_solver{nullptr};
-
-  /** Optimizer to be used in the preprocessing stage of GCS, which is
-  performed when SolveShortestPath is called when the `preprocessing` setting
-  has been set to true. If not set, the interface at .solver will be used, if
-  provided, otherwise the best solver for the given problem is selected. Note
-  that if the solver cannot handle the type of optimization problem generated,
-  then calling the solvers::SolverInterface::Solve() method will throw. */
-  const solvers::SolverInterface* preprocessing_solver{nullptr};
-
-  /** Options passed to the solver when solving the generated problem.*/
-  solvers::SolverOptions solver_options{};
-
-  /** Optional solver options to be used in SolveConvexRestriction(), which is
-  also used during the rounding stage of SolveShortestPath() given the
-  relaxation. If not set, solver_options is used.
-  For instance, one might want to set tighter (i.e., lower) tolerances for
-  running the relaxed problem and looser (i.e., higher) tolerances for final
-  solves during rounding. */
-  std::optional<solvers::SolverOptions> restriction_solver_options{
-      std::nullopt};
-
-  /** Optional solver options to be used by preprocessing_solver in the
-  preprocessing stage of GCS, which is used in SolveShortestPath. If
-  preprocessing_solver is set but this parameter is not then solver_options is
-  used. For instance, one might want to print solver logs for the main
-  optimization, but not from the many smaller preprocessing optimizations. */
-  std::optional<solvers::SolverOptions> preprocessing_solver_options{
-      std::nullopt};
-
-  /** Some steps in GCS can be parallelized. This is the maximum number of
-  threads used in all places in the algorithm.
-  @note Some solvers will choose their own level of parallelization, independent
-  of this setting. To limit the number of threads, add
-  @ref solvers::CommonSolverOption::kMaxThreads to the solver_options. */
-  Parallelism parallelism{Parallelism::Max()};
-};
-
-struct GcsGraphvizOptions {
-  /** Passes this object to an Archive.
-  Refer to @ref yaml_serialization "YAML Serialization" for background. */
-  template <typename Archive>
-  void Serialize(Archive* a) {
-    a->Visit(DRAKE_NVP(show_slacks));
-    a->Visit(DRAKE_NVP(show_vars));
-    a->Visit(DRAKE_NVP(show_flows));
-    a->Visit(DRAKE_NVP(show_costs));
-    a->Visit(DRAKE_NVP(scientific));
-    a->Visit(DRAKE_NVP(precision));
-  }
-
-  /** Determines whether the values of the intermediate (slack) variables are
-  also displayed in the graph. */
-  bool show_slacks{true};
-
-  /** Determines whether the solution values for decision variables in each set
-  are shown. */
-  bool show_vars{true};
-
-  /** Determines whether the flow value results are shown. The flow values are
-  shown both with a numeric value and through the transparency value on the
-  edge, where a flow of 0.0 will correspond to an (almost) invisible edge,
-  and a flow of 1.0 will display as a fully black edge. */
-  bool show_flows{true};
-
-  /** Determines whether the cost value results are shown. This will show both
-  edge and vertex costs. */
-  bool show_costs{true};
-
-  /** Sets the floating point formatting to scientific (if true) or fixed (if
-  false). */
-  bool scientific{false};
-
-  /** Sets the floating point precision (how many digits are generated) of the
-  annotations. */
-  int precision{3};
-};
+// struct GraphOfConvexSetsOptions and GcsGraphvizOptions are defined in 
+// drake/geometry/optimization/graph_of_convex_sets.h
 
 /**
 GraphOfConvexSets (GCS) implements the design pattern and optimization problems
@@ -228,9 +82,9 @@ or infinite graphs, by deriving from ImplicitGraphOfConvexSets.
 
 @ingroup geometry_optimization
 */
-class GraphOfConvexSets {
+class MultiAgentGraphOfConvexSets {
  public:
-  DRAKE_NO_COPY_NO_MOVE_NO_ASSIGN(GraphOfConvexSets);
+  DRAKE_NO_COPY_NO_MOVE_NO_ASSIGN(MultiAgentGraphOfConvexSets);
 
   /** Specify the transcription of the optimization problem to which a
   constraint or cost should be added, or from which they should be retrieved.*/
@@ -242,13 +96,13 @@ class GraphOfConvexSets {
   };
 
   /** Constructs an empty graph. */
-  GraphOfConvexSets() = default;
+  MultiAgentGraphOfConvexSets() = default;
 
-  virtual ~GraphOfConvexSets();
+  virtual ~MultiAgentGraphOfConvexSets();
 
   class Edge;  // forward declaration.
 
-  using VertexId = Identifier<class VertexTag>;
+  using VertexId = Identifier<class VertexTag>; // "using" gives an alias to the class Identifier<class VertexTag>
   using EdgeId = Identifier<class EdgeTag>;
 
   /** Each vertex in the graph has a corresponding ConvexSet, and a std::string
@@ -409,6 +263,7 @@ class GraphOfConvexSets {
 
     //----- LIZHUANG Modified Here -----
     // New query interface functions
+    /** Returns the variable component with index @p idx for agent @p agent . */
     symbolic::Variable x_at(int agent, int idx) const;
     //----------------------------------
 
@@ -444,7 +299,7 @@ class GraphOfConvexSets {
     std::vector<Edge*> incoming_edges_{};
     std::vector<Edge*> outgoing_edges_{};
 
-    friend class GraphOfConvexSets;
+    friend class MultiAgentGraphOfConvexSets;
   };
 
   // Note: We think of this as a directed edge in the shortest path problem, but
@@ -457,34 +312,6 @@ class GraphOfConvexSets {
     DRAKE_NO_COPY_NO_MOVE_NO_ASSIGN(Edge);
 
     ~Edge();
-
-    // // LIZHUANG Modified it, add a agent layer --------------------
-    // struct AgentData {
-    //   symbolic::Variable phi_{};
-    //   // We construct placeholder variables for y and z here so that they can be
-    //   // accessed later from a MathematicalProgramResult.  We intentionally do
-    //   // *not* provide direct access to them for the user.
-    // //   const VectorX<symbolic::Variable> y_{};
-    // //   const VectorX<symbolic::Variable> z_{};
-    //   VectorX<symbolic::Variable> y_{};
-    //   VectorX<symbolic::Variable> z_{};
-      
-    //   std::unordered_map<symbolic::Variable, symbolic::Variable> x_to_yz_{};
-    //   // Note: ell_[i] is associated with costs_[i].
-    //   solvers::VectorXDecisionVariable ell_{};
-    //   std::vector<std::pair<solvers::Binding<solvers::Cost>,
-    //                       std::unordered_set<Transcription>>>
-    //       costs_{};
-    //   solvers::VectorXDecisionVariable slacks_{};
-    //   std::vector<std::pair<solvers::Binding<solvers::Constraint>,
-    //                       std::unordered_set<Transcription>>>
-    //       constraints_;
-    //   std::optional<bool> phi_value_{};
-    //   // Maintain a vector of allowed vars for each agent
-    //   symbolic::Variables allowed_vars_per_agent_{};
-
-    //   freind class GraphOfConvexSets;
-    // };
 
     /** Returns the unique identifier associated with this Edge. */
     EdgeId id() const { return id_; }
@@ -508,22 +335,11 @@ class GraphOfConvexSets {
     connects to. */
     Vertex& v() { return *v_; }
 
-    /** Returns the binary variable associated with this edge. It can be used
-    to determine whether this edge was active in the solution to an
-    optimization problem, by calling GetSolution(phi()) on a returned
-    MathematicalProgramResult. 
-    
-    @pydrake_mkdoc_identifier{single}
-    */
-    const symbolic::Variable& phi() const { return agents_[0].phi_; }
-    // const symbolic::Variable& phi() const { return phi_; }
 
     /** Returns the binary variable associated with this edge and a specific agent. 
     It can be used to determine whether this edge was active for this agent in the 
     solution to an optimization problem, by calling GetSolution(phi()) on a returned
     MathematicalProgramResult. 
-
-    @pydrake_mkdoc_identifier{multi}
     */
     const symbolic::Variable& phi(int agent) const {
         DRAKE_DEMAND(agent >= 0 && agent < n_agents_);
@@ -532,13 +348,6 @@ class GraphOfConvexSets {
 
     /** Returns the number of agents for this edge. */
     const int& n_agents() const { return n_agents_; }
-
-    // /** Returns the AgentData for a particular @p agent on this edge. */
-    // const AgentData& agent_data(int agent_id) const {
-    //     DRAKE_DEMAND(agent_id >= 0);
-    //     DRAKE_DEMAND(agent_id < static_cast<int>(agents_.size()));
-    //     return agents_[agent_id];
-    // } //  LIZHUANG ADDED.
 
     /** Returns the continuous decision variables associated with vertex `u`.
     This can be used for constructing symbolic::Expression costs and
@@ -558,27 +367,15 @@ class GraphOfConvexSets {
     */
     const VectorX<symbolic::Variable>& xv() const { return v_->x(); }
 
-    /** Creates continuous slack variables for this edge, appending them to
-    an internal vector of existing slack variables. These slack variables
-    can be used in any cost or constraint on this edge only, and allows for
-    modeling more complex costs and constraints.
-    
-    @pydrake_mkdoc_identifier{single}
-    */
-    solvers::VectorXDecisionVariable NewSlackVariables(int rows,
-                                                       const std::string& name);
-
     /** Creates continuous slack variables for this edge and particular `agent`, 
     appending them to an internal vector of existing slack variables. These 
     slack variables can be used in any cost or constraint on this edge only, 
     and allows for modeling more complex costs and constraints.
-    
-    @pydrake_mkdoc_identifier{multi}
     */
     solvers::VectorXDecisionVariable NewSlackVariables(int agent, int rows,
                                                        const std::string& name);
 
-    /** Adds a cost to this edge, described by a symbolic::Expression @p e
+    /** Adds a cost to this edge for agent @p agent, described by a symbolic::Expression @p e
     containing *only* elements of xu() and xv() as variables.  For technical
     reasons relating to being able to "turn-off" the cost on inactive edges, all
     costs are eventually implemented with a slack variable and a constraint:
@@ -598,35 +395,9 @@ class GraphOfConvexSets {
     @throws std::exception if no transcription is specified.
     @pydrake_mkdoc_identifier{expression}
     */
-    solvers::Binding<solvers::Cost> AddCost(
+    solvers::Binding<solvers::Cost> AddCostForAgent(
+        int agent,
         const symbolic::Expression& e,
-        const std::unordered_set<Transcription>& use_in_transcription = {
-            Transcription::kMIP, Transcription::kRelaxation,
-            Transcription::kRestriction});
-
-    /** Adds a cost to this edge.  @p binding must contain *only* elements of
-    xu() and xv() as variables. For technical reasons relating to being able to
-    "turn-off" the cost on inactive edges, all costs are eventually implemented
-    with a slack variable and a constraint:
-    @verbatim
-    min g(xu, xv) ⇒ min ℓ, s.t. ℓ ≥ g(xu,xv)
-    @endverbatim
-    You must use GetSolutionCost() to retrieve the cost of the solution, rather
-    than evaluating the cost directly, in order to get consistent behavior when
-    solving with the different GCS transcriptions.
-    @param use_in_transcription specifies the components of the problem to
-    which the constraint should be added.
-    @note Linear costs lead to negative costs if decision variables are not
-    properly constrained. Users may want to check that the solution does not
-    contain negative costs.
-    @returns the added cost, g(xu, xv).
-    @throws std::exception if binding.variables() is not a subset of xu() ∪
-    xv().
-    @throws std::exception if no transcription is specified.
-    @pydrake_mkdoc_identifier{binding}
-    */
-    solvers::Binding<solvers::Cost> AddCost(
-        const solvers::Binding<solvers::Cost>& binding,
         const std::unordered_set<Transcription>& use_in_transcription = {
             Transcription::kMIP, Transcription::kRelaxation,
             Transcription::kRestriction});
@@ -652,6 +423,7 @@ class GraphOfConvexSets {
     @throws std::exception if binding.variables() is not a subset of xu() ∪
     xv().
     @throws std::exception if no transcription is specified.
+    @pydrake_mkdoc_identifier{binding}
     */
     solvers::Binding<solvers::Cost> AddCostForAgent(
         int agent,
@@ -660,7 +432,7 @@ class GraphOfConvexSets {
             Transcription::kMIP, Transcription::kRelaxation,
             Transcription::kRestriction});
 
-    /** Adds a constraint to this edge.
+    /** Adds a constraint to this edge for a specific @p agent.
     @param f must contain *only* elements of xu() and xv() as variables.
     @param use_in_transcription specifies the components of the problem to
     which the constraint should be added.
@@ -672,26 +444,9 @@ class GraphOfConvexSets {
     @throws std::exception if no transcription is specified.
     @pydrake_mkdoc_identifier{formula}
     */
-    solvers::Binding<solvers::Constraint> AddConstraint(
+    solvers::Binding<solvers::Constraint> AddConstraintForAgent(
+        int agent,
         const symbolic::Formula& f,
-        const std::unordered_set<Transcription>& use_in_transcription = {
-            Transcription::kMIP, Transcription::kRelaxation,
-            Transcription::kRestriction});
-
-    /** Adds a constraint to this edge.
-    @param binding must contain *only* elements of xu() and xv() as variables.
-    @param use_in_transcription specifies the components of the problem to
-    which the constraint should be added.
-
-    @throws std::exception if binding.variables() is not a subset of xu() ∪
-    xv().
-    @throws std::exception if xu() ∪ xv() is empty, i.e., when both vertices
-    have an ambient dimension of zero.
-    @throws std::exception if no transcription is specified.
-    @pydrake_mkdoc_identifier{binding}
-    */
-    solvers::Binding<solvers::Constraint> AddConstraint(
-        const solvers::Binding<solvers::Constraint>& binding,
         const std::unordered_set<Transcription>& use_in_transcription = {
             Transcription::kMIP, Transcription::kRelaxation,
             Transcription::kRestriction});
@@ -707,6 +462,7 @@ class GraphOfConvexSets {
     @throws std::exception if xu() ∪ xv() is empty, i.e., when both vertices
     have an ambient dimension of zero.
     @throws std::exception if no transcription is specified.
+    @pydrake_mkdoc_identifier{binding}
     */
     solvers::Binding<solvers::Constraint> AddConstraintForAgent(
         int agent,
@@ -721,17 +477,8 @@ class GraphOfConvexSets {
     to its bounds (i.e. requiring phi == 0.5). */
     void AddPhiConstraintForAgent(int agent, bool phi_value);
 
-    /** Adds a constraint on the binary variable associated with this edge.
-    @note We intentionally do not return a binding to the constraint created by
-    this call, as that would allow the caller to make nonsensical modifications
-    to its bounds (i.e. requiring phi == 0.5). */
-    void AddPhiConstraint(bool phi_value);
-
     /** Removes any constraints added to @p agent with AddPhiConstraintForAgent. */
     void ClearPhiConstraintsForAgent(int agent);
-
-    /** Removes any constraints added with AddPhiConstraint. */
-    void ClearPhiConstraints();
 
     /** Removes any constraints added to any agent with AddPhiConstraintForAgent at once*/
     void ClearPhiConstraintsForAllAgents();
@@ -780,21 +527,6 @@ class GraphOfConvexSets {
             Transcription::kMIP, Transcription::kRelaxation,
             Transcription::kRestriction}) const;
 
-
-    /** Returns the sum of the costs associated with this edge in `result`, or
-    std::nullopt if no solution for this edge is available. 
-    @pydrake_mkdoc_identifier{allcosts} */
-    std::optional<double> GetSolutionCost(
-        const solvers::MathematicalProgramResult& result) const;
-
-    /** Returns the cost associated with the `cost` binding on this edge in
-    `result`, or std::nullopt if no solution for this edge is available.
-    @throws std::exception if cost is not associated with this edge. 
-    @pydrake_mkdoc_identifier{1cost}*/
-    std::optional<double> GetSolutionCost(
-        const solvers::MathematicalProgramResult& result,
-        const solvers::Binding<solvers::Cost>& cost) const;
-
     /** Returns the sum of the costs associated with this edge and this @p agent in `result`, or
     std::nullopt if no solution for this edge is available. 
     @pydrake_mkdoc_identifier{1agentallcosts} */
@@ -824,23 +556,6 @@ class GraphOfConvexSets {
     std::optional<double> GetSolutionCostForAllAgents(
         const solvers::MathematicalProgramResult& result,
         const solvers::Binding<solvers::Cost>& cost) const;
-
-    /** Returns the vector value of the slack variables associated with ϕxᵤ in
-    `result`, or std::nullopt if no solution for this edge is available. This
-    can obtain a different value than the Vertex::GetSolution(), e.g. from
-    `edge->xu().GetSolution(result)`. First, a deactivated edge (defined by Phi
-    ~= 0) will return the zero vector here, while Vertex::GetSolution() will
-    return std::nullopt (rather than divide by zero to recover Xu). Second, in
-    the case of a loose convex relaxation, the vertex version will return the
-    *averaged* value of the edge slacks for all non-zero-flow edges. */
-    std::optional<Eigen::VectorXd> GetSolutionPhiXu(
-        const solvers::MathematicalProgramResult& result) const;
-
-    /** Returns the vector value of the slack variables associated with ϕxᵥ in
-    `result`, or std::nullopt if no solution for this edge is available.
-    See GetSolutionPhiXu() for more details. */
-    std::optional<Eigen::VectorXd> GetSolutionPhiXv(
-        const solvers::MathematicalProgramResult& result) const;
 
     /** Returns the vector value of the slack variables associated with ϕxᵤ and for @p agent in
     `result`, or std::nullopt if no solution for this edge is available. This
@@ -896,7 +611,7 @@ class GraphOfConvexSets {
       // Maintain a vector of allowed vars for each agent
       symbolic::Variables allowed_vars_per_agent_{};
     
-      friend class GraphOfConvexSets;
+      friend class MultiAgentGraphOfConvexSets;
     };
 
     int n_agents_{1};
@@ -926,14 +641,14 @@ class GraphOfConvexSets {
         return agents_[agent_id];
     } //  LIZHUANG ADDED.
 
-    friend class GraphOfConvexSets;
+    friend class MultiAgentGraphOfConvexSets;
   };
 
   /** Returns a deep copy of this graph.
   @throws std::exception if edges have slack variables. We can add this support
   once it's needed.
   */
-  std::unique_ptr<GraphOfConvexSets> Clone() const;
+  std::unique_ptr<MultiAgentGraphOfConvexSets> Clone() const;
 
   /** Adds a vertex to the graph.  A copy of @p set is cloned and stored inside
   the graph. If @p name is empty then a default name will be provided. 
@@ -962,20 +677,11 @@ class GraphOfConvexSets {
   // TODO(russt): Provide helper methods to add multiple vertices which share
   // the same ConvexSet.
 
-  /** Adds an edge to the graph from Vertex @p u to Vertex @p v.  The
-  vertex references must refer to valid vertices in this graph. If @p name is
-  empty then a default name will be provided.
-  @throws std::exception if `u` or `v` are not valid vertices in this graph. 
-  @pydrake_mkdoc_identifier{singleagent}
-  */
-  Edge* AddEdge(Vertex* u, Vertex* v, std::string name = "");
-
   // ----- LIZHUANG ADDED HERE ------
   /** Adds an edge to the graph from Vertex @p u to Vertex @p v.  The
   vertex references must refer to valid vertices in this graph. If @p name is
   empty then a default name will be provided.
   @throws std::exception if `u` or `v` are not valid vertices in this graph. 
-  @pydrake_mkdoc_identifier{multiagent}
   */
   Edge* AddEdge(Vertex* u, Vertex* v, std::string name, int n_agents);
   // --------------------------------
@@ -1024,6 +730,9 @@ class GraphOfConvexSets {
   int num_vertices() const { return vertices_.size(); }
   int num_edges() const { return edges_.size(); }
 
+  int num_agents() const {return n_agents_;}    // LIZHUANG ADDED
+  void set_num_agents(int n_agents) {n_agents_ = n_agents;} // LIZHUANG ADDED
+
   /** Returns mutable pointers to the vertices stored in the graph. */
   std::vector<Vertex*> Vertices();
 
@@ -1050,22 +759,8 @@ class GraphOfConvexSets {
   */
   bool IsValid(const Edge& e) const;
 
-  /** Removes all constraints added to any edge with AddPhiConstraint. */
+  /** Removes all constraints added to any edge with AddPhiConstraintForAgent. */
   void ClearAllPhiConstraints();
-
-  /** Returns a Graphviz string describing the graph vertices and edges. If
-  `result` is supplied, then the graph will be annotated with the solution
-  values, according to `options`.
-  @param result the optional result from a solver.
-  @param options the struct containing various options for visualization.
-  @param active_path optionally highlights a given path in the graph. The path
-  is displayed as dashed edges in red, displayed in addition to the original
-  graph edges.
-  */
-  std::string GetGraphvizString(
-      const solvers::MathematicalProgramResult* result = nullptr,
-      const GcsGraphvizOptions& options = GcsGraphvizOptions(),
-      const std::vector<const Edge*>* active_path = nullptr) const;
 
   /** Returns a Graphviz string describing the graph vertices and edges for
   a specific `agent`. 
@@ -1074,7 +769,7 @@ class GraphOfConvexSets {
   @param result the optional result from a solver.
   @param options the struct containing various options for visualization.
   @param agent the index of agent that you want to visualize. By default, 
-  agent = -1, which indicates showing the sum of flows and costs (,etc.) 
+  @p agent = -1, which indicates showing the sum of flows and costs (,etc.) 
   of all agents.
   @param active_path optionally highlights a given path in the graph. The path
   is displayed as dashed edges in red, displayed in addition to the original
@@ -1085,33 +780,6 @@ class GraphOfConvexSets {
       const GcsGraphvizOptions& options = GcsGraphvizOptions(),
       int agent = -1,
       const std::vector<const Edge*>* active_path = nullptr) const;
-
-  /** Formulates and solves the mixed-integer convex formulation of the
-  shortest path problem on the graph, as discussed in detail in
-
-  "Shortest Paths in Graphs of Convex Sets" by Tobia Marcucci, Jack Umenberger,
-  Pablo A. Parrilo, Russ Tedrake. https://arxiv.org/abs/2101.11565
-
-  @param source specifies the source set.  The solver will choose any point in
-  that set; to start at a particular continuous state consider adding a Point
-  set to the graph and using that as the source.
-  @param target specifies the target set.  The solver will choose any point in
-  that set.
-  @param options include all settings for solving the shortest path problem.
-  See `GraphOfConvexSetsOptions` for further details. The following default
-  options will be used if they are not provided in `options`:
-  - `options.convex_relaxation = false`,
-  - `options.max_rounded_paths = 0`,
-  - `options.preprocessing = false`.
-
-  @throws std::exception if any of the costs or constraints in the graph are
-  incompatible with the shortest path formulation or otherwise unsupported. All
-  costs must be non-negative for all values of the continuous variables.
-  */
-  solvers::MathematicalProgramResult SolveShortestPath(
-      const Vertex& source, const Vertex& target,
-      const GraphOfConvexSetsOptions& options =
-          GraphOfConvexSetsOptions()) const;
 
   /** Formulates and solves the mixed-integer convex formulation of the multi-agent
   shortest path problem on the graph, as discussed in detail in
@@ -1142,22 +810,6 @@ class GraphOfConvexSets {
     int n_agents,
     const GraphOfConvexSetsOptions& specified_options =
         GraphOfConvexSetsOptions()) const;
-
-  /** Extracts a path from `source` to `target` described by the `result`
-  returned by SolveShortestPath(), via depth-first search following the largest
-  values of the edge binary variables.
-  @param tolerance defines the threshold for checking the integrality
-  conditions of the binary variables for each edge. `tolerance` = 0 would
-  demand that the binary variables are exactly 1 for the edges on the path.
-  `tolerance` = 1 would allow the binary variables to be any value in [0, 1].
-  The default value is 1e-3.
-  @throws std::exception if !result.is_success() or no path from `source` to
-  `target` can be found in the solution.
-  */
-  std::vector<const Edge*> GetSolutionPath(
-      const Vertex& source, const Vertex& target,
-      const solvers::MathematicalProgramResult& result,
-      double tolerance = 1e-3) const;
 
   /** Extracts a path from `source` to `target` (for a specific agent denoted by
   `agent_id`) described by the `result` returned by SolveShortestPathForAgent(),
@@ -1204,29 +856,6 @@ class GraphOfConvexSets {
       const std::unordered_map<const Edge*, double>& flows,
       const GraphOfConvexSetsOptions& options) const;
 
-  /** Samples a collection of unique paths from `source` to `target`, where the
-   flow values (the relaxed binary variables associated with each `Edge`)
-   in `result` are interpreted as the probabilities of transitioning an edge.
-   The returned paths are guaranteed to be unique, and the number of returned
-   paths can be 0 if no paths are found. This function implements the first part
-   of the rounding scheme put forth in Section 4.2 of "Motion Planning around
-   Obstacles with Convex Optimization": https://arxiv.org/abs/2205.04422
-
-   @param source specifies the source vertex.
-   @param target specifies the target vertex.
-   @param options include all settings for sampling the paths. Specifically,
-   the behavior of this function is determined through `options.rounding_seed`,
-   `options.max_rounded_paths`, `options.max_rounding_trials`, and
-   `options.flow_tolerance`, as described in `GraphOfConvexSetsOptions`.
-   @returns A vector of paths, where each path is a vector of `Edge`s.
-   @throws std::exception if options.max_rounded_path < 1.
-   @pydrake_mkdoc_identifier{result}
-   */
-  std::vector<std::vector<const Edge*>> SamplePaths(
-      const Vertex& source, const Vertex& target,
-      const solvers::MathematicalProgramResult& result,
-      const GraphOfConvexSetsOptions& options) const;
-
   /** Samples a collection of unique paths from `source` to `target` of 
    a specific agent denoted as `agent_id`, where the flow values (the relaxed 
    binary variables associated with each `Edge` and for each agent)
@@ -1245,6 +874,7 @@ class GraphOfConvexSets {
    `options.flow_tolerance`, as described in `GraphOfConvexSetsOptions`.
    @returns A vector of paths, where each path is a vector of `Edge`s.
    @throws std::exception if options.max_rounded_path < 1.
+   @pydrake_mkdoc_identifier{result}
    */
   std::vector<std::vector<const Edge*>> SamplePathsForAgent(
       const Vertex& source, const Vertex& target, const int agent_id,
@@ -1272,15 +902,10 @@ class GraphOfConvexSets {
 
   @throws std::exception if the @p initial_guess does not contain solutions for
   the decision variables required in this convex restriction.
-  */
-  solvers::MathematicalProgramResult SolveConvexRestriction(
-      const std::vector<const Edge*>& active_edges,
-      const GraphOfConvexSetsOptions& options = GraphOfConvexSetsOptions(),
-      const solvers::MathematicalProgramResult* initial_guess = nullptr) const;
 
-  /** The agent-specific version of SolveConvexRestriction, with the agent specified
+  SolveConvexRestrictionForAgent is the agent-specific version of 
+  GraphOfConvexSets::SolveConvexRestriction, with the agent specified
   by the parameter @p agent_id and the number of agents specified by @p n_agents.
-  More information see `SolveConvexRestriction` funciton. 
   */
   solvers::MathematicalProgramResult SolveConvexRestrictionForAgent(
       const std::vector<const Edge*>& active_edges,
@@ -1290,14 +915,6 @@ class GraphOfConvexSets {
 
  private: /* Facilitates testing. */
   friend class PreprocessShortestPathTest;
-
-  // Construct a prog so that it contains the variables and constraints of the
-  // preprocessing program for a given edge.
-  std::unique_ptr<solvers::MathematicalProgram> ConstructPreprocessingProgram(
-      EdgeId edge_id,
-      const std::map<VertexId, std::vector<int>>& incoming_edges,
-      const std::map<VertexId, std::vector<int>>& outgoing_edges,
-      VertexId source_id, VertexId target_id) const;
 
   // Function of ConstructPreprocessingProgram for multi-agent case.
   // Construct a prog so that it contains the variables and constriants of the 
@@ -1310,26 +927,12 @@ class GraphOfConvexSets {
       const std::vector<VertexId>& target_ids) const;
 
   // Construct a prog that can be used to solve the convex restriction for a
-  // given set of active edges (and optionally populate with an initial guess if
-  // one is provided).
-  std::unique_ptr<solvers::MathematicalProgram> ConstructRestrictionProgram(
-      const std::vector<const Edge*>& active_edges,
-      const solvers::MathematicalProgramResult* initial_guess) const;
-
-  // Construct a prog that can be used to solve the convex restriction for a
   // given set of active edges and for a given agent specified by `agent_id` 
   // (and optionally populate with an initial guess if one is provided).
   std::unique_ptr<solvers::MathematicalProgram> ConstructRestrictionProgramForAgent(
       const std::vector<const Edge*>& active_edges,
       const int agent_id,
       const solvers::MathematicalProgramResult* initial_guess) const;
-
-  // Add results for additional variables in `result` to make it comparable with
-  // other transcriptions.
-  void MakeRestrictionResultLookLikeMixedInteger(
-      const solvers::MathematicalProgram& prog,
-      solvers::MathematicalProgramResult* result,
-      const std::vector<const Edge*>& active_edges) const;
 
   // Add results for additional variables of a particular agent
   // denoted by `agent_id` in `result` to make it comparable with
@@ -1339,10 +942,6 @@ class GraphOfConvexSets {
       const solvers::MathematicalProgram& prog,
       solvers::MathematicalProgramResult* result,
       const std::vector<const Edge*>& active_edges) const;
-
-  std::set<EdgeId> PreprocessShortestPath(
-      VertexId source_id, VertexId target_id,
-      const GraphOfConvexSetsOptions& options) const;
 
   // Function of PreprocessShortestPath for multi-agent case
   std::set<EdgeId> PreprocessShortestPathForMultiAgent(
@@ -1379,6 +978,9 @@ class GraphOfConvexSets {
   // containers (like std::set or std::map) using their default ordering.
   std::map<VertexId, std::unique_ptr<Vertex>> vertices_{};
   std::map<EdgeId, std::unique_ptr<Edge>> edges_{};
+
+  // The member parameter for the number of agents in this MultiAgentGraphOfConvexSets
+  int n_agents_{1};
 };
 
 }  // namespace optimization
