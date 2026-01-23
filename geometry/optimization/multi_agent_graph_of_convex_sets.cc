@@ -131,15 +131,17 @@ Vertex::Vertex(VertexId id, const ConvexSet& set, std::string name)
     : id_(id),
       set_(set.Clone()),
       name_(std::move(name)),
-      n_agents_(1), //ADDED
+      n_agents_(1),  // ADDED
       placeholder_x_(symbolic::MakeVectorContinuousVariable(
           set_->ambient_dimension(), name_)) {}
 
 //------ LIZHUANG Modified Here ------
 // An overloaded construct function for Vertex to deal with multi-agent case.
 // x will be a VectorContinuousVariable with length (n_agents * ambient_dim),
-// each ambient_dim elements (fake "row") representing the original VectorContinousVariable
-Vertex::Vertex(VertexId id, const ConvexSet& set, std::string name, int n_agents)
+// each ambient_dim elements (fake "row") representing the original
+// VectorContinousVariable
+Vertex::Vertex(VertexId id, const ConvexSet& set, std::string name,
+               int n_agents)
     : id_(id),
       set_(set.Clone()),
       name_(std::move(name)),
@@ -307,7 +309,8 @@ void Vertex::RemoveOutgoingEdge(Edge* e) {
 
 // Multi-agent case modification for class GraphOfConvexSets::Edge
 // LIZHUANG Modified here
-Edge::Edge(const EdgeId& id, Vertex* u, Vertex* v, std::string name, int n_agents)
+Edge::Edge(const EdgeId& id, Vertex* u, Vertex* v, std::string name,
+           int n_agents)
     : id_{id},
       u_{u},
       v_{v},
@@ -321,15 +324,12 @@ Edge::Edge(const EdgeId& id, Vertex* u, Vertex* v, std::string name, int n_agent
   agents_.reserve(n_agents_);
   for (int a = 0; a < n_agents_; ++a) {
     AgentData agent;
-    agent.phi_ = symbolic::Variable(
-                  fmt::format("{}phi_a{}", name_, a), 
-                  symbolic::Variable::Type::BINARY);
+    agent.phi_ = symbolic::Variable(fmt::format("{}phi_a{}", name_, a),
+                                    symbolic::Variable::Type::BINARY);
     agent.y_ = symbolic::MakeVectorContinuousVariable(
-                u_->ambient_dimension(),
-                fmt::format("{}y_a{}", name_, a));
+        u_->ambient_dimension(), fmt::format("{}y_a{}", name_, a));
     agent.z_ = symbolic::MakeVectorContinuousVariable(
-                v_->ambient_dimension(),
-                fmt::format("{}z_a{}", name_, a));
+        v_->ambient_dimension(), fmt::format("{}z_a{}", name_, a));
     // x_to_yz_ is an unordered map with ux or vx as keys and y or z as values.
     agent.x_to_yz_.reserve(agent.y_.size() + agent.z_.size());
     for (int i = 0; i < u_->ambient_dimension(); ++i) {
@@ -349,9 +349,10 @@ Edge::Edge(const EdgeId& id, Vertex* u, Vertex* v, std::string name, int n_agent
 
 Edge::~Edge() = default;
 
-// New interface for multi-agent case, with `agent` specifying a particular agent. 
-VectorXDecisionVariable Edge::NewSlackVariables(
-    int agent, int rows, const std::string& name = "s") {
+// New interface for multi-agent case, with `agent` specifying a particular
+// agent.
+VectorXDecisionVariable Edge::NewSlackVariables(int agent, int rows,
+                                                const std::string& name = "s") {
   DRAKE_DEMAND(agent >= 0 && agent < n_agents_);
   auto& a = agents_[agent];
 
@@ -365,36 +366,37 @@ VectorXDecisionVariable Edge::NewSlackVariables(
   // Add this slack variable to the x_to_yz map, so that it can
   // be looked up like any other variable in the vertices.
   for (int i = 0; i < rows; ++i) {
-    allowed_vars_.insert(s[i]);      // allowed_vars_ is now a union of allowed vars for each agent
-    a.allowed_vars_per_agent_.insert(s[i]);   // per-agent!
-    a.x_to_yz_.emplace(s[i], s[i]);  // per-agent!
+    allowed_vars_.insert(
+        s[i]);  // allowed_vars_ is now a union of allowed vars for each agent
+    a.allowed_vars_per_agent_.insert(s[i]);  // per-agent!
+    a.x_to_yz_.emplace(s[i], s[i]);          // per-agent!
   }
 
   return s;
 }
 
 Binding<Cost> Edge::AddCostForAgent(
-    int agent,
-    const symbolic::Expression& e,
+    int agent, const symbolic::Expression& e,
     const std::unordered_set<Transcription>& use_in_transcription) {
-  return AddCostForAgent(agent, solvers::internal::ParseCost(e), use_in_transcription);
+  return AddCostForAgent(agent, solvers::internal::ParseCost(e),
+                         use_in_transcription);
 }
 
 // New AddCost for a specific agent in multi-agent case.
 Binding<Cost> Edge::AddCostForAgent(
-    int agent, 
-    const Binding<Cost>& binding,
+    int agent, const Binding<Cost>& binding,
     const std::unordered_set<Transcription>& use_in_transcription) {
   DRAKE_DEMAND(agent >= 0 && agent < n_agents_);
   auto& a = agents_[agent];
-  
-  DRAKE_THROW_UNLESS(Variables(binding.variables()).IsSubsetOf(a.allowed_vars_per_agent_));
+
+  DRAKE_THROW_UNLESS(
+      Variables(binding.variables()).IsSubsetOf(a.allowed_vars_per_agent_));
   DRAKE_THROW_UNLESS(use_in_transcription.size() > 0);
 
   const int n = a.ell_.size();
   a.ell_.conservativeResize(n + 1);
-  a.ell_[n] =
-      Variable(fmt::format("{}ell{}_a{}", name_, n, agent), Variable::Type::CONTINUOUS);
+  a.ell_[n] = Variable(fmt::format("{}ell{}_a{}", name_, n, agent),
+                       Variable::Type::CONTINUOUS);
   a.costs_.push_back({binding, use_in_transcription});
   // Note: The ell_ variable is a slack variable used e.g. SolveShortestPath,
   // but not e.g. SolveConvexRestriction. It is an implementation detail, and
@@ -405,17 +407,15 @@ Binding<Cost> Edge::AddCostForAgent(
 }
 
 Binding<Constraint> Edge::AddConstraintForAgent(
-    int agent,
-    const symbolic::Formula& f,
+    int agent, const symbolic::Formula& f,
     const std::unordered_set<MultiAgentGraphOfConvexSets::Transcription>&
         use_in_transcription) {
   return AddConstraintForAgent(agent, solvers::internal::ParseConstraint(f),
-                       use_in_transcription);
+                               use_in_transcription);
 }
 
 Binding<Constraint> Edge::AddConstraintForAgent(
-    int agent,
-    const Binding<Constraint>& binding,
+    int agent, const Binding<Constraint>& binding,
     const std::unordered_set<MultiAgentGraphOfConvexSets::Transcription>&
         use_in_transcription) {
   DRAKE_DEMAND(agent >= 0 && agent < n_agents_);
@@ -423,7 +423,8 @@ Binding<Constraint> Edge::AddConstraintForAgent(
 
   const int total_ambient_dimension = allowed_vars_.size();
   DRAKE_THROW_UNLESS(total_ambient_dimension > 0);
-  DRAKE_THROW_UNLESS(Variables(binding.variables()).IsSubsetOf(a.allowed_vars_per_agent_));
+  DRAKE_THROW_UNLESS(
+      Variables(binding.variables()).IsSubsetOf(a.allowed_vars_per_agent_));
   DRAKE_THROW_UNLESS(use_in_transcription.size() > 0);
 
   a.constraints_.push_back({binding, use_in_transcription});
@@ -489,8 +490,8 @@ std::vector<solvers::Binding<solvers::Constraint>> Edge::GetConstraints(
 }
 
 std::vector<solvers::Binding<solvers::Constraint>> Edge::GetConstraintsForAgent(
-  int agent,   
-  const std::unordered_set<MultiAgentGraphOfConvexSets::Transcription>&
+    int agent,
+    const std::unordered_set<MultiAgentGraphOfConvexSets::Transcription>&
         used_in_transcription) const {
   DRAKE_DEMAND(agent >= 0 && agent < n_agents_);
   auto& a = agents_[agent];
@@ -561,11 +562,9 @@ std::optional<double> Edge::GetSolutionCostForAllAgents(
   return sum;
 }
 
-
 std::optional<double> Edge::GetSolutionCostForAgent(
     const MathematicalProgramResult& result,
-    const solvers::Binding<solvers::Cost>& cost,
-    int agent) const {
+    const solvers::Binding<solvers::Cost>& cost, int agent) const {
   DRAKE_DEMAND(agent >= 0 && agent < n_agents_);
   if (!result.get_decision_variable_index()) {
     // Then there were no results.
@@ -581,14 +580,14 @@ std::optional<double> Edge::GetSolutionCostForAgent(
       }
     }
   }
-  throw std::runtime_error(fmt::format(
-      "Edge::GetSolutionCost: cost {} was not registered with this edge for agent {}.",
-      cost.to_string(), agent));
+  throw std::runtime_error(
+      fmt::format("Edge::GetSolutionCost: cost {} was not registered with this "
+                  "edge for agent {}.",
+                  cost.to_string(), agent));
 }
 
 std::optional<double> Edge::GetSolutionCostForAllAgents(
-    const MathematicalProgramResult& result,
-    const Binding<Cost>& cost) const {
+    const MathematicalProgramResult& result, const Binding<Cost>& cost) const {
   if (!result.get_decision_variable_index()) {
     // Then there were no results.
     return std::nullopt;
@@ -598,19 +597,20 @@ std::optional<double> Edge::GetSolutionCostForAllAgents(
     const auto& a = agents_[agent];
     for (int i = 0; i < ssize(a.costs_); ++i) {
       if (a.costs_[i].first == cost) {
-        if (result.get_decision_variable_index()->contains(a.ell_[i].get_id())) {
+        if (result.get_decision_variable_index()->contains(
+                a.ell_[i].get_id())) {
           sum += result.GetSolution(a.ell_[i]);
         } else {
-          throw std::runtime_error(fmt::format(
-              "Edge::GetSolutionCost: cost {} was not registered with this edge for agent {}.",
-              cost.to_string(), agent));
+          throw std::runtime_error(
+              fmt::format("Edge::GetSolutionCost: cost {} was not registered "
+                          "with this edge for agent {}.",
+                          cost.to_string(), agent));
         }
       }
     }
   }
   return sum;
 }
-
 
 std::optional<Eigen::VectorXd> Edge::GetSolutionPhiXuForAgent(
     const solvers::MathematicalProgramResult& result, int agent) const {
@@ -636,7 +636,8 @@ std::optional<Eigen::VectorXd> Edge::GetSolutionPhiXvForAgent(
   }
 }
 
-std::unique_ptr<MultiAgentGraphOfConvexSets> MultiAgentGraphOfConvexSets::Clone() const {
+std::unique_ptr<MultiAgentGraphOfConvexSets>
+MultiAgentGraphOfConvexSets::Clone() const {
   auto clone = std::make_unique<MultiAgentGraphOfConvexSets>();
   // Map from original vertices to cloned vertices.
   std::unordered_map<const Vertex*, Vertex*> original_to_cloned;
@@ -651,7 +652,8 @@ std::unique_ptr<MultiAgentGraphOfConvexSets> MultiAgentGraphOfConvexSets::Clone(
   return clone;
 }
 
-Vertex* MultiAgentGraphOfConvexSets::AddVertex(const ConvexSet& set, std::string name) {
+Vertex* MultiAgentGraphOfConvexSets::AddVertex(const ConvexSet& set,
+                                               std::string name) {
   if (name.empty()) {
     name = fmt::format("v{}", vertices_.size());
   }
@@ -662,12 +664,14 @@ Vertex* MultiAgentGraphOfConvexSets::AddVertex(const ConvexSet& set, std::string
 }
 
 //----- LIZHUANG Modified Here -----
-Vertex* MultiAgentGraphOfConvexSets::AddVertex(const ConvexSet& set, std::string name, int n_agents) {
+Vertex* MultiAgentGraphOfConvexSets::AddVertex(const ConvexSet& set,
+                                               std::string name, int n_agents) {
   if (name.empty()) {
     name = fmt::format("v{}", vertices_.size());
   }
   VertexId id = VertexId::get_new_id();
-  auto [iter, success] = vertices_.try_emplace(id, new Vertex(id, set, name, n_agents));
+  auto [iter, success] =
+      vertices_.try_emplace(id, new Vertex(id, set, name, n_agents));
   DRAKE_DEMAND(success);
   return iter->second.get();
 }
@@ -708,7 +712,8 @@ ReplaceVariables(
 }  // namespace
 
 Vertex* MultiAgentGraphOfConvexSets::AddVertexFromTemplate(const Vertex& v) {
-  Vertex* v_new = AddVertex(v.set(), v.name(), v.n_agents()); //Added v.n_agents()
+  Vertex* v_new =
+      AddVertex(v.set(), v.name(), v.n_agents());  // Added v.n_agents()
   v_new->ell_ = symbolic::MakeVectorContinuousVariable(
       v.ell_.size(), "v_ell");  // These would normally be created by AddCost.
   std::unordered_map<Variable::Id, Variable> subs;
@@ -723,7 +728,8 @@ Vertex* MultiAgentGraphOfConvexSets::AddVertexFromTemplate(const Vertex& v) {
   return v_new;
 }
 
-// Edge* MultiAgentGraphOfConvexSets::AddEdge(Vertex* u, Vertex* v, std::string name) {
+// Edge* MultiAgentGraphOfConvexSets::AddEdge(Vertex* u, Vertex* v, std::string
+// name) {
 //   DRAKE_DEMAND(u != nullptr && IsValid(*u));
 //   DRAKE_DEMAND(v != nullptr && IsValid(*v));
 //   if (name.empty()) {
@@ -739,14 +745,16 @@ Vertex* MultiAgentGraphOfConvexSets::AddVertexFromTemplate(const Vertex& v) {
 // }
 
 // ------LIZHUANG ADDED HERE------
-Edge* MultiAgentGraphOfConvexSets::AddEdge(Vertex* u, Vertex* v, std::string name, int n_agents) {
+Edge* MultiAgentGraphOfConvexSets::AddEdge(Vertex* u, Vertex* v,
+                                           std::string name, int n_agents) {
   DRAKE_DEMAND(u != nullptr && IsValid(*u));
   DRAKE_DEMAND(v != nullptr && IsValid(*v));
   if (name.empty()) {
     name = fmt::format("e{}", edges_.size());
   }
   EdgeId id = EdgeId::get_new_id();
-  auto [iter, success] = edges_.try_emplace(id, new Edge(id, u, v, name, n_agents));
+  auto [iter, success] =
+      edges_.try_emplace(id, new Edge(id, u, v, name, n_agents));
   DRAKE_DEMAND(success);
   Edge* e = iter->second.get();
   u->AddOutgoingEdge(e);
@@ -756,7 +764,7 @@ Edge* MultiAgentGraphOfConvexSets::AddEdge(Vertex* u, Vertex* v, std::string nam
 // -------------------------------
 
 Edge* MultiAgentGraphOfConvexSets::AddEdgeFromTemplate(Vertex* u, Vertex* v,
-                                             const Edge& e) {
+                                                       const Edge& e) {
   DRAKE_DEMAND(u != nullptr && IsValid(*u));
   DRAKE_DEMAND(v != nullptr && IsValid(*v));
 
@@ -767,8 +775,9 @@ Edge* MultiAgentGraphOfConvexSets::AddEdgeFromTemplate(Vertex* u, Vertex* v,
     const auto& ea = e.agents_[a];
     auto& ea_new = e_new->agents_[a];
     ea_new.ell_ = symbolic::MakeVectorContinuousVariable(
-      ea.ell_.size(),
-      fmt::format("{}ell_a{}", e.name(), a));  // These would normally be created by AddCost.
+        ea.ell_.size(),
+        fmt::format("{}ell_a{}", e.name(),
+                    a));  // These would normally be created by AddCost.
     std::unordered_map<Variable::Id, Variable> subs;
     subs.emplace(ea.phi_.get_id(), ea_new.phi_);
     for (int i = 0; i < ssize(ea.ell_); ++i) {
@@ -782,9 +791,11 @@ Edge* MultiAgentGraphOfConvexSets::AddEdgeFromTemplate(Vertex* u, Vertex* v,
     }
     if (ea.slacks_.size() > 0) {
       // Slacks get created and inserted into the other variable lists in a way
-      // that's slightly annoying to deal with. We can add this once it's needed.
+      // that's slightly annoying to deal with. We can add this once it's
+      // needed.
       throw std::runtime_error(
-          "AddEdgeFromTemplate: templates with slack variables are not supported "
+          "AddEdgeFromTemplate: templates with slack variables are not "
+          "supported "
           "yet (but could be).");
     }
     ea_new.costs_ = ReplaceVariables(ea.costs_, subs);
@@ -793,7 +804,8 @@ Edge* MultiAgentGraphOfConvexSets::AddEdgeFromTemplate(Vertex* u, Vertex* v,
   }
   for (int a = 0; a < e.n_agents_; a++) {
     DRAKE_DEMAND(e_new->agents_[a].costs_.size() == e.agents_[a].costs_.size());
-    DRAKE_DEMAND(e_new->agents_[a].constraints_.size() == e.agents_[a].constraints_.size());
+    DRAKE_DEMAND(e_new->agents_[a].constraints_.size() ==
+                 e.agents_[a].constraints_.size());
   }
   return e_new;
 }
@@ -808,7 +820,8 @@ const Vertex* MultiAgentGraphOfConvexSets::GetVertexByName(
   return nullptr;
 }
 
-Vertex* MultiAgentGraphOfConvexSets::GetMutableVertexByName(const std::string& name) {
+Vertex* MultiAgentGraphOfConvexSets::GetMutableVertexByName(
+    const std::string& name) {
   for (auto& [v_id, v] : vertices_) {
     if (v->name() == name) {
       return v.get();
@@ -817,7 +830,8 @@ Vertex* MultiAgentGraphOfConvexSets::GetMutableVertexByName(const std::string& n
   return nullptr;
 }
 
-const Edge* MultiAgentGraphOfConvexSets::GetEdgeByName(const std::string& name) const {
+const Edge* MultiAgentGraphOfConvexSets::GetEdgeByName(
+    const std::string& name) const {
   for (const auto& [e_id, e] : edges_) {
     if (e->name() == name) {
       return e.get();
@@ -826,7 +840,8 @@ const Edge* MultiAgentGraphOfConvexSets::GetEdgeByName(const std::string& name) 
   return nullptr;
 }
 
-Edge* MultiAgentGraphOfConvexSets::GetMutableEdgeByName(const std::string& name) {
+Edge* MultiAgentGraphOfConvexSets::GetMutableEdgeByName(
+    const std::string& name) {
   for (auto& [e_id, e] : edges_) {
     if (e->name() == name) {
       return e.get();
@@ -921,12 +936,12 @@ void MultiAgentGraphOfConvexSets::ClearAllPhiConstraints() {
   }
 }
 
-// New API for multi-agent case, the extra parameter `agent` indicates which agent to draw,
-// if agent == -1, then we sum the flows and costs for all agents.
+// New API for multi-agent case, the extra parameter `agent` indicates which
+// agent to draw, if agent == -1, then we sum the flows and costs for all
+// agents.
 std::string MultiAgentGraphOfConvexSets::GetGraphvizStringForAgent(
     const solvers::MathematicalProgramResult* result,
-    const GcsGraphvizOptions& options,
-    int agent,
+    const GcsGraphvizOptions& options, int agent,
     const std::vector<const Edge*>* active_path) const {
   // This function converts the range (0.0, 1.0) to Hex strings in the range
   // (20, FF).
@@ -976,9 +991,10 @@ std::string MultiAgentGraphOfConvexSets::GetGraphvizStringForAgent(
     if (result) {
       if (options.show_costs) {
         if (agent >= 0) {
-          std::optional<double> cost = e->GetSolutionCostForAgent(*result, agent);
+          std::optional<double> cost =
+              e->GetSolutionCostForAgent(*result, agent);
           if (cost.has_value()) {
-            graphviz << "\ncost[a" << agent << "] = " << *cost; 
+            graphviz << "\ncost[a" << agent << "] = " << *cost;
           }
         } else {
           std::optional<double> cost = e->GetSolutionCostForAllAgents(*result);
@@ -990,21 +1006,28 @@ std::string MultiAgentGraphOfConvexSets::GetGraphvizStringForAgent(
       if (options.show_slacks && result->get_decision_variable_index()) {
         graphviz << "\n";
         if (agent >= 0) {
-          std::optional<VectorXd> phixu = e->GetSolutionPhiXuForAgent(*result, agent);
+          std::optional<VectorXd> phixu =
+              e->GetSolutionPhiXuForAgent(*result, agent);
           if (phixu.has_value()) {
-            graphviz << "ϕ[a" << agent << "] xᵤ = [" << phixu->transpose() << "],\n";
+            graphviz << "ϕ[a" << agent << "] xᵤ = [" << phixu->transpose()
+                     << "],\n";
           }
-          std::optional<VectorXd> phixv = e->GetSolutionPhiXvForAgent(*result, agent);
+          std::optional<VectorXd> phixv =
+              e->GetSolutionPhiXvForAgent(*result, agent);
           if (phixv.has_value()) {
-            graphviz << "ϕ[a" << agent << "] xᵥ = [" << phixv->transpose() << "]";
+            graphviz << "ϕ[a" << agent << "] xᵥ = [" << phixv->transpose()
+                     << "]";
           }
         } else {
           for (int a = 0; a < e->n_agents(); ++a) {
-            std::optional<VectorXd> phixu = e->GetSolutionPhiXuForAgent(*result, a);
+            std::optional<VectorXd> phixu =
+                e->GetSolutionPhiXuForAgent(*result, a);
             if (phixu.has_value()) {
-              graphviz << "ϕ[a" << a << "] xᵤ = [" << phixu->transpose() << "],\n";
+              graphviz << "ϕ[a" << a << "] xᵤ = [" << phixu->transpose()
+                       << "],\n";
             }
-            std::optional<VectorXd> phixv = e->GetSolutionPhiXvForAgent(*result, a);
+            std::optional<VectorXd> phixv =
+                e->GetSolutionPhiXvForAgent(*result, a);
             if (phixv.has_value()) {
               graphviz << "ϕ[a" << a << "] xᵥ = [" << phixv->transpose() << "]";
             }
@@ -1012,7 +1035,7 @@ std::string MultiAgentGraphOfConvexSets::GetGraphvizStringForAgent(
         }
       }
       if (options.show_flows) {
-        double phi_value = 0.0; //Added
+        double phi_value = 0.0;  // Added
         graphviz << "\n";
         if (agent >= 0) {
           phi_value = result->GetSolution(e->phi(agent));
@@ -1021,13 +1044,12 @@ std::string MultiAgentGraphOfConvexSets::GetGraphvizStringForAgent(
           for (int a = 0; a < e->n_agents(); ++a) {
             phi_value += result->GetSolution(e->phi(a));
           }
-          graphviz << "ϕ(all) = "  << phi_value;
+          graphviz << "ϕ(all) = " << phi_value;
         }
         graphviz << "\"";
         // Note: This must be last, because it also sets the color parameter
         // of the edge (and hence must close the name within quote-marks)
-        graphviz << ", color=" << "\"#000000"
-                 << floatToHex(phi_value);
+        graphviz << ", color=" << "\"#000000" << floatToHex(phi_value);
       }
     }
     graphviz << "\"];\n";
@@ -1047,15 +1069,14 @@ std::string MultiAgentGraphOfConvexSets::GetGraphvizStringForAgent(
   return graphviz.str();
 }
 
-
-
-// Function of ConstructPreprocessingProgram for multi-agent case -- Lizhuang Modified.
+// Function of ConstructPreprocessingProgram for multi-agent case -- Lizhuang
+// Modified.
 std::unique_ptr<MathematicalProgram>
 MultiAgentGraphOfConvexSets::ConstructPreprocessingProgramForMultiAgent(
     EdgeId edge_id, int agent_id,
     const std::map<VertexId, std::vector<int>>& incoming_edges,
     const std::map<VertexId, std::vector<int>>& outgoing_edges,
-    const std::vector<VertexId>& source_ids, 
+    const std::vector<VertexId>& source_ids,
     const std::vector<VertexId>& target_ids) const {
   DRAKE_DEMAND(source_ids.size() == target_ids.size());
   int n_agents = source_ids.size();
@@ -1081,8 +1102,10 @@ MultiAgentGraphOfConvexSets::ConstructPreprocessingProgramForMultiAgent(
     g_limits.emplace_back(prog->AddBoundingBoxConstraint(0, 1, g[a]));
   }
 
-  std::vector<std::map<VertexId, Binding<LinearEqualityConstraint>>> conservation_f(n_agents);
-  std::vector<std::map<VertexId, Binding<LinearEqualityConstraint>>> conservation_g(n_agents);
+  std::vector<std::map<VertexId, Binding<LinearEqualityConstraint>>>
+      conservation_f(n_agents);
+  std::vector<std::map<VertexId, Binding<LinearEqualityConstraint>>>
+      conservation_g(n_agents);
   std::vector<std::map<VertexId, Binding<LinearConstraint>>> degree(n_agents);
   for (const auto& [vertex_id, v] : vertices_) {
     auto maybe_Ev_in = incoming_edges.find(vertex_id);
@@ -1099,7 +1122,8 @@ MultiAgentGraphOfConvexSets::ConstructPreprocessingProgramForMultiAgent(
     if (Ev.size() > 0) {
       RowVectorXd A_flow(Ev.size());
       A_flow << RowVectorXd::Ones(Ev_in.size()),
-          -1 * RowVectorXd::Ones(Ev_out.size());  // A_flow = RowVectorXd(1, 1, ..., 1, -1, -1, ..., -1)
+          -1 * RowVectorXd::Ones(Ev_out.size());  // A_flow = RowVectorXd(1, 1,
+                                                  // ..., 1, -1, -1, ..., -1)
 
       for (int a = 0; a < n_agents; ++a) {
         VectorXDecisionVariable fv(Ev.size());
@@ -1144,27 +1168,33 @@ MultiAgentGraphOfConvexSets::ConstructPreprocessingProgramForMultiAgent(
       }
     }
   }
-  
+
   // Update bounds of conservation of flow:
   // ∑ f_in,u - ∑ f_out,u = 1 - δ(is_source).
   if (e->u().id() == source_ids[agent_id]) {
-    f_limits[agent_id].evaluator()->set_bounds(VectorXd::Zero(nE), VectorXd::Zero(nE));
-    conservation_f[agent_id].at(e->u().id())
+    f_limits[agent_id].evaluator()->set_bounds(VectorXd::Zero(nE),
+                                               VectorXd::Zero(nE));
+    conservation_f[agent_id]
+        .at(e->u().id())
         .evaluator()
         ->set_bounds(Vector1d(0), Vector1d(0));
   } else {
-    conservation_f[agent_id].at(e->u().id())
+    conservation_f[agent_id]
+        .at(e->u().id())
         .evaluator()
         ->set_bounds(Vector1d(1), Vector1d(1));
   }
   // ∑ g_in,v - ∑ f_out,v = δ(is_target) - 1.
   if (e->v().id() == target_ids[agent_id]) {
-    g_limits[agent_id].evaluator()->set_bounds(VectorXd::Zero(nE), VectorXd::Zero(nE));
-    conservation_g[agent_id].at(e->v().id())
+    g_limits[agent_id].evaluator()->set_bounds(VectorXd::Zero(nE),
+                                               VectorXd::Zero(nE));
+    conservation_g[agent_id]
+        .at(e->v().id())
         .evaluator()
         ->set_bounds(Vector1d(0), Vector1d(0));
   } else {
-    conservation_g[agent_id].at(e->v().id())
+    conservation_g[agent_id]
+        .at(e->v().id())
         .evaluator()
         ->set_bounds(Vector1d(-1), Vector1d(-1));
   }
@@ -1172,18 +1202,23 @@ MultiAgentGraphOfConvexSets::ConstructPreprocessingProgramForMultiAgent(
   // Update bounds of degree constraints:
   // ∑ f_in,v + ∑ g_in,v = 0.
   if (degree[agent_id].contains(e->v().id())) {
-    degree[agent_id].at(e->v().id()).evaluator()->set_bounds(Vector1d(0), Vector1d(0));
+    degree[agent_id]
+        .at(e->v().id())
+        .evaluator()
+        ->set_bounds(Vector1d(0), Vector1d(0));
   }
 
   // For each edge "e" and agent "a", we build a separate program prog_(e,a).
-  // If prog_(e,a) can be solved, it means exist an agent "a" who needs edge "e" in its path.
+  // If prog_(e,a) can be solved, it means exist an agent "a" who needs edge "e"
+  // in its path.
 
   return prog;
 }
 
-//PreprocessShortestPath for multi-agent case -- Lizhuang Modified.
-std::set<EdgeId> MultiAgentGraphOfConvexSets::PreprocessShortestPathForMultiAgent(
-    const std::vector<VertexId>& source_ids, 
+// PreprocessShortestPath for multi-agent case -- Lizhuang Modified.
+std::set<EdgeId>
+MultiAgentGraphOfConvexSets::PreprocessShortestPathForMultiAgent(
+    const std::vector<VertexId>& source_ids,
     const std::vector<VertexId>& target_ids,
     const GraphOfConvexSetsOptions& options) const {
   DRAKE_DEMAND(source_ids.size() == target_ids.size());
@@ -1191,14 +1226,16 @@ std::set<EdgeId> MultiAgentGraphOfConvexSets::PreprocessShortestPathForMultiAgen
 
   for (int a = 0; a < n_agents; a++) {
     if (!vertices_.contains(source_ids[a])) {
-      throw std::runtime_error(fmt::format(
-          "Source vertex {} is not a vertex in this MultiAgentGraphOfConvexSets.",
-          source_ids[a]));
+      throw std::runtime_error(
+          fmt::format("Source vertex {} is not a vertex in this "
+                      "MultiAgentGraphOfConvexSets.",
+                      source_ids[a]));
     }
     if (!vertices_.contains(target_ids[a])) {
-      throw std::runtime_error(fmt::format(
-          "Target vertex {} is not a vertex in this MultiAgentGraphOfConvexSets.",
-          target_ids[a]));
+      throw std::runtime_error(
+          fmt::format("Target vertex {} is not a vertex in this "
+                      "MultiAgentGraphOfConvexSets.",
+                      target_ids[a]));
     }
   }
 
@@ -1210,9 +1247,11 @@ std::set<EdgeId> MultiAgentGraphOfConvexSets::PreprocessShortestPathForMultiAgen
   int edge_count = 0;
   for (const auto& [edge_id, e] : edges_) {
     // Turn off edges into source or out of target
-    if (std::find(source_ids.begin(), source_ids.end(), e->v().id()) != source_ids.end() ||
-        std::find(target_ids.begin(), target_ids.end(), e->u().id()) != target_ids.end()) {
-    // if (e->v().id() == source_id || e->u().id() == target_id) {
+    if (std::find(source_ids.begin(), source_ids.end(), e->v().id()) !=
+            source_ids.end() ||
+        std::find(target_ids.begin(), target_ids.end(), e->u().id()) !=
+            target_ids.end()) {
+      // if (e->v().id() == source_id || e->u().id() == target_id) {
       unusable_edges.insert(edge_id);
     } else {
       outgoing_edges[e->u().id()].push_back(edge_count);
@@ -1258,7 +1297,8 @@ std::set<EdgeId> MultiAgentGraphOfConvexSets::PreprocessShortestPathForMultiAgen
       EdgeId edge_id = idx_to_edge_id.at(i);
       for (int a = 0; a < n_agents; ++a) {
         progs.emplace_back(ConstructPreprocessingProgramForMultiAgent(
-            edge_id, a, incoming_edges, outgoing_edges, source_ids, target_ids));
+            edge_id, a, incoming_edges, outgoing_edges, source_ids,
+            target_ids));
         DRAKE_ASSERT(progs.back()->IsThreadSafe());
       }
     }
@@ -1286,7 +1326,7 @@ std::set<EdgeId> MultiAgentGraphOfConvexSets::PreprocessShortestPathForMultiAgen
     std::set<EdgeId> useful_edges;
     for (int i = 0; i < this_batch_nE; ++i) {
       EdgeId edge_id = idx_to_edge_id.at(i);
-      for (int a = 0; a < n_agents; ++a){
+      for (int a = 0; a < n_agents; ++a) {
         const auto& result = results.at(i * n_agents + a);
         // if (!result.is_success()) {
         //   unusable_edges.insert(idx_to_edge_id.at(i));
@@ -1422,9 +1462,10 @@ void MultiAgentGraphOfConvexSets::AddPerspectiveCost(
     prog->AddRotatedLorentzConeConstraint(
         A_cone, VectorXd::Zero(pqc->A().rows() + 1), vars);
   } else {
-    throw std::runtime_error(fmt::format(
-        "MultiAgentGraphOfConvexSets::Edge does not support this binding type: {}",
-        binding.to_string()));
+    throw std::runtime_error(
+        fmt::format("MultiAgentGraphOfConvexSets::Edge does not support this "
+                    "binding type: {}",
+                    binding.to_string()));
   }
 }
 
@@ -1609,31 +1650,32 @@ bool GcsIsThreadsafe(const MultiAgentGraphOfConvexSets& gcs) {
 
 }  // namespace
 
-
 // The multi-agent version of SolveShortestPath -- LIZHUANG ADDED
-MathematicalProgramResult MultiAgentGraphOfConvexSets::SolveShortestPathForMultiAgent(
-    const std::vector<Vertex*>& sources, 
-    const std::vector<Vertex*>& targets,
-    int n_agents,
-    const GraphOfConvexSetsOptions& specified_options) const {
+MathematicalProgramResult
+MultiAgentGraphOfConvexSets::SolveShortestPathForMultiAgent(
+    const std::vector<Vertex*>& sources, const std::vector<Vertex*>& targets,
+    int n_agents, const GraphOfConvexSetsOptions& specified_options) const {
   DRAKE_THROW_UNLESS(sources.size() == static_cast<size_t>(n_agents));
   DRAKE_THROW_UNLESS(targets.size() == static_cast<size_t>(n_agents));
 
-  // Store the VertexId of each source and target vertices into vectors of VertexId.
+  // Store the VertexId of each source and target vertices into vectors of
+  // VertexId.
   std::vector<VertexId> source_ids;
   std::vector<VertexId> target_ids;
   for (int a = 0; a < n_agents; a++) {
     VertexId source_id = sources[a]->id();
     VertexId target_id = targets[a]->id();
     if (vertices_.find(source_id) == vertices_.end()) {
-        throw std::runtime_error(fmt::format(
-            "Source vertex {} is not a vertex in this MultiAgentGraphOfConvexSets.",
-            source_id));
+      throw std::runtime_error(
+          fmt::format("Source vertex {} is not a vertex in this "
+                      "MultiAgentGraphOfConvexSets.",
+                      source_id));
     }
     if (vertices_.find(target_id) == vertices_.end()) {
-        throw std::runtime_error(fmt::format(
-            "Target vertex {} is not a vertex in this MultiAgentGraphOfConvexSets.",
-            target_id));
+      throw std::runtime_error(
+          fmt::format("Target vertex {} is not a vertex in this "
+                      "MultiAgentGraphOfConvexSets.",
+                      target_id));
     }
     source_ids.push_back(source_id);
     target_ids.push_back(target_id);
@@ -1652,12 +1694,12 @@ MathematicalProgramResult MultiAgentGraphOfConvexSets::SolveShortestPathForMulti
     options.max_rounded_paths = 0;
   }
 
-  // The boolean flag IncludesCurrentTranscription accepts value from a lambda function 
-  // to determine whether to include the current transcription.
-  // The anonymous function captures the external variable `options` by reference, takes
-  // an unordered_set `transcriptions` as the input.
-  // If convex_relaxation is TRUE and transcriptions has a kRelaxation, or
-  // if convex_relaxation is FALSE and transcriptions has a kMIP, the return value will be TRUE.
+  // The boolean flag IncludesCurrentTranscription accepts value from a lambda
+  // function to determine whether to include the current transcription. The
+  // anonymous function captures the external variable `options` by reference,
+  // takes an unordered_set `transcriptions` as the input. If convex_relaxation
+  // is TRUE and transcriptions has a kRelaxation, or if convex_relaxation is
+  // FALSE and transcriptions has a kMIP, the return value will be TRUE.
   auto IncludesCurrentTranscription =
       [&options](
           const std::unordered_set<Transcription>& transcriptions) -> bool {
@@ -1669,7 +1711,8 @@ MathematicalProgramResult MultiAgentGraphOfConvexSets::SolveShortestPathForMulti
 
   std::set<EdgeId> unusable_edges;
   if (*options.preprocessing) {
-    unusable_edges = PreprocessShortestPathForMultiAgent(source_ids, target_ids, options);
+    unusable_edges =
+        PreprocessShortestPathForMultiAgent(source_ids, target_ids, options);
   }
 
   MathematicalProgram prog;
@@ -1677,13 +1720,15 @@ MathematicalProgramResult MultiAgentGraphOfConvexSets::SolveShortestPathForMulti
   std::map<VertexId, std::vector<Edge*>> incoming_edges;
   std::map<VertexId, std::vector<Edge*>> outgoing_edges;
   // std::map<VertexId, std::vector<VectorXDecisionVariable>> vertex_edge_ell;
-  std::map<std::pair<VertexId, int>, std::vector<VectorXDecisionVariable>> vertex_edge_ell; // Use {vertex_id, agent_id} as the key
+  std::map<std::pair<VertexId, int>, std::vector<VectorXDecisionVariable>>
+      vertex_edge_ell;  // Use {vertex_id, agent_id} as the key
   std::vector<Edge*> excluded_edges;
 
   // std::map<EdgeId, Variable> relaxed_phi;
   // std::vector<Variable> excluded_phi;
   std::map<std::pair<EdgeId, int>, Variable> relaxed_phi;
-  std::map<std::pair<EdgeId, int>, Variable> excluded_phi;    // Use {edge_id, agent_id} as the key
+  std::map<std::pair<EdgeId, int>, Variable>
+      excluded_phi;  // Use {edge_id, agent_id} as the key
 
   // The flow constraints below assume that we have some edge out of the source
   // and into the target, so we handle that case explicitly.
@@ -1694,7 +1739,8 @@ MathematicalProgramResult MultiAgentGraphOfConvexSets::SolveShortestPathForMulti
     // include it in the optimization.
 
     // if (!e->phi_value_.value_or(true) || unusable_edges.contains(edge_id)) {
-    //   // Track excluded edges (ϕ = 0 and preprocessed) so that their variables
+    //   // Track excluded edges (ϕ = 0 and preprocessed) so that their
+    //   variables
     //   // can be set in the optimization result.
     //   excluded_edges.emplace_back(e.get());
     //   if (*options.convex_relaxation) {
@@ -1726,7 +1772,7 @@ MathematicalProgramResult MultiAgentGraphOfConvexSets::SolveShortestPathForMulti
       // e is std::unique_ptr<Edge>, which should be treated as a pointer.
       const auto& ea = e->agent_data(a);
       if (!ea.phi_value_.value_or(true)) {
-        // Track excluded edges for agent a (ϕ[a] = 0) so that their variables 
+        // Track excluded edges for agent a (ϕ[a] = 0) so that their variables
         // can be set in the optimization result.
         if (*options.convex_relaxation) {
           Variable phi(fmt::format("phi_excluded_e{}_a{}", edge_id, a));
@@ -1737,8 +1783,9 @@ MathematicalProgramResult MultiAgentGraphOfConvexSets::SolveShortestPathForMulti
 
       Variable phi;
       if (*options.convex_relaxation) {
-        phi = prog.NewContinuousVariables<1>(fmt::format("{}phi_a{}", e->name(), a))[0];
-        prog.AddBoundingBoxConstraint(0, 1, phi); // 0 <= phi <= 1
+        phi = prog.NewContinuousVariables<1>(
+            fmt::format("{}phi_a{}", e->name(), a))[0];
+        prog.AddBoundingBoxConstraint(0, 1, phi);  // 0 <= phi <= 1
         relaxed_phi.emplace(std::make_pair(edge_id, a), phi);
       } else {
         phi = ea.phi_;
@@ -1747,8 +1794,9 @@ MathematicalProgramResult MultiAgentGraphOfConvexSets::SolveShortestPathForMulti
       if (ea.phi_value_.has_value()) {
         DRAKE_DEMAND(*(ea.phi_value_));
         double phi_value = *(ea.phi_value_) ? 1.0 : 0.0;
-        prog.AddLinearEqualityConstraint(Vector1d(1.0), phi_value,
-                                        Vector1<Variable>(phi));   // 1.0 * phi = phi_value
+        prog.AddLinearEqualityConstraint(
+            Vector1d(1.0), phi_value,
+            Vector1<Variable>(phi));  // 1.0 * phi = phi_value
       }
       prog.AddDecisionVariables(ea.y_);
       prog.AddDecisionVariables(ea.z_);
@@ -1761,7 +1809,7 @@ MathematicalProgramResult MultiAgentGraphOfConvexSets::SolveShortestPathForMulti
       if (e->v().ambient_dimension() > 0) {
         e->v().set().AddPointInNonnegativeScalingConstraints(&prog, ea.z_, phi);
       }
-  
+
       // Edge costs.
       for (int i = 0; i < ea.ell_.size(); ++i) {
         const auto& [b, transcriptions] = ea.costs_[i];
@@ -1778,11 +1826,11 @@ MathematicalProgramResult MultiAgentGraphOfConvexSets::SolveShortestPathForMulti
           for (int j = 0; j < old_vars.size(); ++j) {
             vars[j + 2] = ea.x_to_yz_.at(old_vars[j]);
           }
-  
+
           AddPerspectiveCost(&prog, b, vars);
         }
       }
-  
+
       // Edge constraints.
       for (const auto& [b, transcriptions] : ea.constraints_) {
         if (IncludesCurrentTranscription(transcriptions)) {
@@ -1793,11 +1841,11 @@ MathematicalProgramResult MultiAgentGraphOfConvexSets::SolveShortestPathForMulti
           for (int j = 0; j < old_vars.size(); ++j) {
             vars[j + 1] = ea.x_to_yz_.at(old_vars[j]);
           }
-  
+
           // Note: The use of perspective functions here does not check (nor
-          // assume) that the constraints describe a bounded set.  The boundedness
-          // is ensured by the intersection of these constraints with the convex
-          // sets (on the vertices).
+          // assume) that the constraints describe a bounded set.  The
+          // boundedness is ensured by the intersection of these constraints
+          // with the convex sets (on the vertices).
           AddPerspectiveConstraint(&prog, b, vars);
         }
       }
@@ -1806,15 +1854,15 @@ MathematicalProgramResult MultiAgentGraphOfConvexSets::SolveShortestPathForMulti
   for (int a = 0; a < n_agents; ++a) {
     if (!has_edges_out_of_source[a]) {
       MathematicalProgramResult result;
-      log()->info("Agent {}: Source vertex {} ({}) has no outgoing edges.",
-                  a, sources[a]->name(), source_ids[a]);
+      log()->info("Agent {}: Source vertex {} ({}) has no outgoing edges.", a,
+                  sources[a]->name(), source_ids[a]);
       result.set_solution_result(SolutionResult::kInfeasibleConstraints);
       return result;
     }
     if (!has_edges_into_target[a]) {
       MathematicalProgramResult result;
-      log()->info("Agent {}: Target vertex {} ({}) has no incoming edges.", 
-                  a, targets[a]->name(), target_ids[a]);
+      log()->info("Agent {}: Target vertex {} ({}) has no incoming edges.", a,
+                  targets[a]->name(), target_ids[a]);
       result.set_solution_result(SolutionResult::kInfeasibleConstraints);
       return result;
     }
@@ -1843,22 +1891,27 @@ MathematicalProgramResult MultiAgentGraphOfConvexSets::SolveShortestPathForMulti
         a_row << RowVectorXd::Constant(incoming.size(), -1.0),
             RowVectorXd::Ones(outgoing.size());
 
-        // Conservation of flow: ∑ ϕ_out^a - ∑ ϕ_in^a = δ(is_source_a) - δ(is_target_a).
+        // Conservation of flow: ∑ ϕ_out^a - ∑ ϕ_in^a = δ(is_source_a) -
+        // δ(is_target_a).
         int count = 0;
         for (const Edge* e : incoming) {
-          vars[count++] =
-              *options.convex_relaxation ? relaxed_phi.at({e->id(), a}) : e->agent_data(a).phi_;
+          vars[count++] = *options.convex_relaxation
+                              ? relaxed_phi.at({e->id(), a})
+                              : e->agent_data(a).phi_;
         }
         for (const Edge* e : outgoing) {
-          vars[count++] =
-              *options.convex_relaxation ? relaxed_phi.at({e->id(), a}) : e->agent_data(a).phi_;
+          vars[count++] = *options.convex_relaxation
+                              ? relaxed_phi.at({e->id(), a})
+                              : e->agent_data(a).phi_;
         }
         prog.AddLinearEqualityConstraint(
             a_row, (is_source_a ? 1.0 : 0.0) - (is_target_a ? 1.0 : 0.0), vars);
 
         // Spatial conservation of flow: ∑ z_in = ∑ y_out.
         if (!is_source_a && !is_target_a) {
-          for (int i = 0; i < v->ambient_dimension(); ++i) {  // v->ambient_dimension() is now the var dimension for 1 agent
+          for (int i = 0; i < v->ambient_dimension();
+               ++i) {  // v->ambient_dimension() is now the var dimension for 1
+                       // agent
             count = 0;
             for (const Edge* e : incoming) {
               vars[count++] = e->agent_data(a).z_[i];
@@ -1877,14 +1930,13 @@ MathematicalProgramResult MultiAgentGraphOfConvexSets::SolveShortestPathForMulti
         VectorXDecisionVariable yz_out(outgoing.size() * n_v);
         for (int i = 0; i < static_cast<int>(outgoing.size()); ++i) {
           const Edge* e = outgoing[i];
-          phi_out[i] = *options.convex_relaxation
-                          ? relaxed_phi.at({e->id(), a})
-                          : e->agent_data(a).phi_;
+          phi_out[i] = *options.convex_relaxation ? relaxed_phi.at({e->id(), a})
+                                                  : e->agent_data(a).phi_;
           yz_out.segment(i * n_v, n_v) = e->agent_data(a).y_;
         }
         // Degree constraint: ∑ ϕ_out^a <= 1- δ(is_target_a).
         prog.AddLinearConstraint(RowVectorXd::Ones(outgoing.size()), 0.0,
-                                is_target_a ? 0.0 : 1.0, phi_out);
+                                 is_target_a ? 0.0 : 1.0, phi_out);
 
         if (!is_source_a && !is_target_a) {
           RowVectorXd a_row = RowVectorXd::Ones(outgoing.size());
@@ -1894,28 +1946,31 @@ MathematicalProgramResult MultiAgentGraphOfConvexSets::SolveShortestPathForMulti
           }
           for (int i = 0; i < static_cast<int>(outgoing.size()); ++i) {
             const Edge* e_out = outgoing[i];
-            if (source_ids[a] == e_out->v().id() || target_ids[a] == e_out->v().id()) {
+            if (source_ids[a] == e_out->v().id() ||
+                target_ids[a] == e_out->v().id()) {
               continue;
             }
             for (const Edge* e_in : incoming) {
               if (e_in->u().id() == e_out->v().id()) {  // Possible two-cycle
-                a_row[i] = -1.0; 
+                a_row[i] = -1.0;
                 phi_out[i] = *options.convex_relaxation
-                                ? relaxed_phi.at({e_in->id(), a})
-                                : e_in->agents_[a].phi_;
+                                 ? relaxed_phi.at({e_in->id(), a})
+                                 : e_in->agents_[a].phi_;
                 // Two-cycle constraint: ∑ ϕ_u,out - ϕ_uv - ϕ_vu >= 0
                 prog.AddLinearConstraint(a_row, 0.0, 1.0, phi_out);
-                A_yz.block(0, i * n_v, n_v, n_v) = -MatrixXd::Identity(n_v, n_v);
+                A_yz.block(0, i * n_v, n_v, n_v) =
+                    -MatrixXd::Identity(n_v, n_v);
                 yz_out.segment(i * n_v, n_v) = e_in->agents_[a].z_;
                 // Two-cycle spatial constraint:
                 // ∑ y_u - y_uv - z_vu ∈ (∑ ϕ_u,out - ϕ_uv - ϕ_vu) X_u
                 v->set().AddPointInNonnegativeScalingConstraints(
-                    &prog, A_yz, VectorXd::Zero(n_v), a_row, 0, yz_out, phi_out);
+                    &prog, A_yz, VectorXd::Zero(n_v), a_row, 0, yz_out,
+                    phi_out);
 
                 a_row[i] = 1.0;
                 phi_out[i] = *options.convex_relaxation
-                                ? relaxed_phi.at({e_out->id(), a})
-                                : e_out->agent_data(a).phi_;
+                                 ? relaxed_phi.at({e_out->id(), a})
+                                 : e_out->agent_data(a).phi_;
                 A_yz.block(0, i * n_v, n_v, n_v) = MatrixXd::Identity(n_v, n_v);
                 yz_out.segment(i * n_v, n_v) = e_out->agent_data(a).y_;
               }
@@ -1931,8 +1986,8 @@ MathematicalProgramResult MultiAgentGraphOfConvexSets::SolveShortestPathForMulti
         for (int ii = 0; ii < v->ell_.size(); ++ii) {
           const auto& [b, transcriptions] = v->costs_[ii];
           if (IncludesCurrentTranscription(transcriptions)) {
-            VectorXDecisionVariable vertex_ell =
-                prog.NewContinuousVariables(cost_edges.size(), 
+            VectorXDecisionVariable vertex_ell = prog.NewContinuousVariables(
+                cost_edges.size(),
                 fmt::format("v{}_a{}_ell{}", v->id(), a, ii));
             vertex_edge_ell[{v->id(), a}].push_back(vertex_ell);
             const VectorXDecisionVariable& old_vars = b.variables();
@@ -2017,14 +2072,15 @@ MathematicalProgramResult MultiAgentGraphOfConvexSets::SolveShortestPathForMulti
     // excluded_edges are edges removed by preprocessing (edge-level) now.
     // For each such edge we must add placeholders for every agent's y/z/phi.
     for (const Edge* e : excluded_edges) {
-      for (int a = 0; a < e->n_agents(); ++a){
+      for (int a = 0; a < e->n_agents(); ++a) {
         num_placeholder_vars += static_cast<int>(e->agent_data(a).y_.size());
         num_placeholder_vars += static_cast<int>(e->agent_data(a).z_.size());
         num_placeholder_vars += 1;  // phi for this agent
       }
       // num_placeholder_vars += e->y_.size() + e->z_.size() + 1;
     }
-    // excluded_phi now is a map<pair<EdgeId, int>, Variable> for edges with ϕ[a] = 0
+    // excluded_phi now is a map<pair<EdgeId, int>, Variable> for edges with
+    // ϕ[a] = 0
     num_placeholder_vars += static_cast<int>(excluded_phi.size());
     std::unordered_map<symbolic::Variable::Id, int> decision_variable_index =
         prog.decision_variable_index();
@@ -2057,7 +2113,8 @@ MathematicalProgramResult MultiAgentGraphOfConvexSets::SolveShortestPathForMulti
       x_val[count++] = 0;
     }
 
-    // Reconstruct vertex x (concatenated per-agent) and register their placeholder ids.
+    // Reconstruct vertex x (concatenated per-agent) and register their
+    // placeholder ids.
     for (const std::pair<const VertexId, std::unique_ptr<Vertex>>& vpair :
          vertices_) {
       const Vertex* v = vpair.second.get();
@@ -2075,13 +2132,16 @@ MathematicalProgramResult MultiAgentGraphOfConvexSets::SolveShortestPathForMulti
         if (is_target_a) {
           sum_phi_agents[a] = 1.0;
           for (const auto& e : incoming_edges[v->id()]) {
-            x_v.segment(a * dim, dim) += result.GetSolution(e->agent_data(a).z_);
+            x_v.segment(a * dim, dim) +=
+                result.GetSolution(e->agent_data(a).z_);
           }
         } else {
           for (const auto& e : outgoing_edges[v->id()]) {
-            x_v.segment(a * dim, dim) += result.GetSolution(e->agent_data(a).y_);
+            x_v.segment(a * dim, dim) +=
+                result.GetSolution(e->agent_data(a).y_);
             sum_phi_agents[a] += result.GetSolution(
-                *options.convex_relaxation ? relaxed_phi.at({e->id(), a}) : e->agent_data(a).phi_);
+                *options.convex_relaxation ? relaxed_phi.at({e->id(), a})
+                                           : e->agent_data(a).phi_);
           }
         }
       }
@@ -2089,29 +2149,32 @@ MathematicalProgramResult MultiAgentGraphOfConvexSets::SolveShortestPathForMulti
       // vertices in the shortest path. We undo yₑ = ϕₑ xᵤ here to ensure that
       // xᵤ is in v->set(). If ∑ ϕₑ is small enough that numerical errors
       // prevent the projection back into the Xᵤ, then we prefer to return NaN.
-      
+
       // Normalize per-agent segments when using convex relaxation; otherwise
       // leave as-is (MIP case has exact phi variables).
       for (int a = 0; a < n_agents; ++a) {
-        if (sum_phi_agents[a] < 100.0 * std::numeric_limits<double>::epsilon()) {
+        if (sum_phi_agents[a] <
+            100.0 * std::numeric_limits<double>::epsilon()) {
           // mark this agent's segment as invalid (NaN)
-          x_v.segment(a * dim, dim) = VectorXd::Constant(v->ambient_dimension(),
-                                  std::numeric_limits<double>::quiet_NaN());
+          x_v.segment(a * dim, dim) = VectorXd::Constant(
+              v->ambient_dimension(), std::numeric_limits<double>::quiet_NaN());
         } else if (*options.convex_relaxation) {
           x_v.segment(a * dim, dim) /= sum_phi_agents[a];
         }
       }
 
-      // Register placeholder variable ids for the full placeholder x() and write values
+      // Register placeholder variable ids for the full placeholder x() and
+      // write values
       for (int i = 0; i < v->full_dimension(); ++i) {
         decision_variable_index.emplace(v->x()[i].get_id(), count);
         x_val[count++] = x_v[i];
       }
 
-      // Aggregate vertex cost slacks (v->ell_) from the per-agent vertex_edge_ell
-      // storage: vertex_edge_ell keyed by {vertex_id, agent} stores a vector
-      // (one entry per included vertex cost). We sum across agents.
-      int active_ell = 0; // index among included costs for this vertex
+      // Aggregate vertex cost slacks (v->ell_) from the per-agent
+      // vertex_edge_ell storage: vertex_edge_ell keyed by {vertex_id, agent}
+      // stores a vector (one entry per included vertex cost). We sum across
+      // agents.
+      int active_ell = 0;  // index among included costs for this vertex
       for (int i = 0; i < v->ell_.size(); ++i) {
         const auto& [b, transcriptions] = v->costs_[i];
         if (IncludesCurrentTranscription(transcriptions)) {
@@ -2124,20 +2187,21 @@ MathematicalProgramResult MultiAgentGraphOfConvexSets::SolveShortestPathForMulti
           x_val[count++] = total;
           ++active_ell;
           // x_val[count++] =
-              // result.GetSolution(vertex_edge_ell.at(v->id())[active_ell++])
-              //     .sum();
+          // result.GetSolution(vertex_edge_ell.at(v->id())[active_ell++])
+          //     .sum();
         }
       }
     }
 
-    // Write the relaxed phi values back into each agent-specific phi placeholder.
+    // Write the relaxed phi values back into each agent-specific phi
+    // placeholder.
     if (*options.convex_relaxation) {
       // Write the value of the relaxed phi into the phi placeholder.
       for (const auto& [edge_agent, relaxed_phi_var] : relaxed_phi) {
         const EdgeId edge_id = edge_agent.first;
         const int a = edge_agent.second;
-        decision_variable_index.emplace(edges_.at(edge_id)->agents_[a].phi_.get_id(),
-                                        count);
+        decision_variable_index.emplace(
+            edges_.at(edge_id)->agents_[a].phi_.get_id(), count);
         x_val[count++] = result.GetSolution(relaxed_phi_var);
       }
     }
@@ -2152,10 +2216,12 @@ MathematicalProgramResult MultiAgentGraphOfConvexSets::SolveShortestPathForMulti
   if (*options.convex_relaxation && *options.max_rounded_paths > 0 &&
       result.is_success()) {
     // std::unordered_map<const Edge*, double> flows;
-    std::vector<std::unordered_map<const Edge*, double>> flows(n_agents); // Each agent has a flow chart
+    std::vector<std::unordered_map<const Edge*, double>> flows(
+        n_agents);  // Each agent has a flow chart
     for (int a = 0; a < n_agents; ++a) {
       for (const auto& [edge_id, e] : edges_) {
-        if (!(e->agent_data(a).phi_value_.value_or(true)) || unusable_edges.contains(edge_id)) {
+        if (!(e->agent_data(a).phi_value_.value_or(true)) ||
+            unusable_edges.contains(edge_id)) {
           flows[a][e.get()] = 0.0;
         } else {
           flows[a][e.get()] = result.GetSolution(relaxed_phi.at({edge_id, a}));
@@ -2163,7 +2229,8 @@ MathematicalProgramResult MultiAgentGraphOfConvexSets::SolveShortestPathForMulti
       }
     }
     // for (const auto& [edge_id, e] : edges_) {
-    //   if (!e->phi_value_.value_or(true) || unusable_edges.contains(edge_id)) {
+    //   if (!e->phi_value_.value_or(true) || unusable_edges.contains(edge_id))
+    //   {
     //     flows.emplace(e.get(), 0.0);
     //   } else {
     //     flows.emplace(e.get(), result.GetSolution(relaxed_phi[edge_id]));
@@ -2184,8 +2251,9 @@ MathematicalProgramResult MultiAgentGraphOfConvexSets::SolveShortestPathForMulti
             "options.max_rounded_paths=0 to disable rounding and return "
             "the solution to the relaxation instead.");
       }
-      candidate_paths_list.insert(std::pair<int, std::vector<std::vector<const Edge*>>>
-                                  (a, candidate_paths));
+      candidate_paths_list.insert(
+          std::pair<int, std::vector<std::vector<const Edge*>>>(
+              a, candidate_paths));
     }
 
     // If any costs or constraints aren't thread-safe, we can't parallelize.
@@ -2203,7 +2271,8 @@ MathematicalProgramResult MultiAgentGraphOfConvexSets::SolveShortestPathForMulti
     for (int a = 0; a < n_agents; ++a) {
       const auto& candidate_paths = candidate_paths_list[a];
       for (int i = 0; i < ssize(candidate_paths); ++i) {
-        progs.push_back(ConstructRestrictionProgramForAgent(candidate_paths[i], a, &result));
+        progs.push_back(ConstructRestrictionProgramForAgent(candidate_paths[i],
+                                                            a, &result));
         prog_ptrs.push_back(progs[i].get());
         prog_idx.push_back(std::pair<int, int>(a, i));
       }
@@ -2240,7 +2309,8 @@ MathematicalProgramResult MultiAgentGraphOfConvexSets::SolveShortestPathForMulti
       // int path_idx = prog_idx[i].second;
       if (rounded_results[i].is_success() &&
           rounded_results[i].get_optimal_cost() < best_cost[a]) {
-        best_result_idx[a] = i;   // Store the global index. (NOT SURE WHAT SHOULD BE ON THE RIGHT.)
+        best_result_idx[a] = i;  // Store the global index. (NOT SURE WHAT
+                                 // SHOULD BE ON THE RIGHT.)
         best_cost[a] = rounded_results[i].get_optimal_cost();
       }
     }
@@ -2248,12 +2318,13 @@ MathematicalProgramResult MultiAgentGraphOfConvexSets::SolveShortestPathForMulti
     for (int a = 0; a < n_agents; ++a) {
       if (best_cost[a] < kInf) {
         // We found at least one valid result.
-        int global_idx = best_result_idx[a];        // index into rounded_sults/prog_ptrs
+        int global_idx =
+            best_result_idx[a];  // index into rounded_sults/prog_ptrs
         result = rounded_results[global_idx];
-        int path_idx = prog_idx[global_idx].second; // recover per-agent path index
+        int path_idx =
+            prog_idx[global_idx].second;  // recover per-agent path index
         MakeRestrictionResultLookLikeMixedIntegerForAgent(
-            a, n_agents,
-            *(prog_ptrs[global_idx]), &result,
+            a, n_agents, *(prog_ptrs[global_idx]), &result,
             candidate_paths_list[a][path_idx]);
       } else {
         // In the event that all rounded results are infeasible, we still want
@@ -2267,15 +2338,17 @@ MathematicalProgramResult MultiAgentGraphOfConvexSets::SolveShortestPathForMulti
     for (const auto& [agent_id, candidate_paths] : candidate_paths_list) {
       rounding_num += candidate_paths.size();
     }
-    log()->info("Finished {} rounding solutions with {}.",
-                rounding_num, result.get_solver_id().name());
+    log()->info("Finished {} rounding solutions with {}.", rounding_num,
+                result.get_solver_id().name());
   }
 
   return result;
 }
 
-// In multi-agent case, we need to sample the paths for a specific agent  -- LIZHUANG ADDED
-std::vector<std::vector<const Edge*>> MultiAgentGraphOfConvexSets::SamplePathsForAgent(
+// In multi-agent case, we need to sample the paths for a specific agent  --
+// LIZHUANG ADDED
+std::vector<std::vector<const Edge*>>
+MultiAgentGraphOfConvexSets::SamplePathsForAgent(
     const Vertex& source, const Vertex& target, const int agent_id,
     const solvers::MathematicalProgramResult& result,
     const GraphOfConvexSetsOptions& options) const {
@@ -2345,7 +2418,8 @@ std::vector<std::vector<const Edge*>> MultiAgentGraphOfConvexSets::SamplePaths(
         if (std::find(visited_vertex_ids.begin(), visited_vertex_ids.end(),
                       e->v().id()) == visited_vertex_ids.end() &&
             flow_exists_and_above_threshold(e)) {
-          candidate_edges.emplace_back(e);  // e->v() is not visited yet and e has a flow > threshold
+          candidate_edges.emplace_back(
+              e);  // e->v() is not visited yet and e has a flow > threshold
         }
       }
       // If the depth first search finds itself at a node with no candidate
@@ -2379,7 +2453,9 @@ std::vector<std::vector<const Edge*>> MultiAgentGraphOfConvexSets::SamplePaths(
       double edge_sample = uniform(generator) * candidate_flows.sum();
       for (size_t ii = 0; ii < candidate_edges.size(); ++ii) {
         if (edge_sample >= candidate_flows(ii)) {
-          edge_sample -= candidate_flows(ii); // Just a simple update of the random sample value for next candidate edge
+          edge_sample -=
+              candidate_flows(ii);  // Just a simple update of the random sample
+                                    // value for next candidate edge
         } else {
           visited_vertex_ids.push_back(candidate_edges[ii]->v().id());
           new_path_vertices.push_back(&candidate_edges[ii]->v());
@@ -2411,10 +2487,12 @@ std::vector<std::vector<const Edge*>> MultiAgentGraphOfConvexSets::SamplePaths(
   return paths;
 }
 
-// Multi-agent case, for a specific agent, get the solution from its soruce to its target.
+// Multi-agent case, for a specific agent, get the solution from its soruce to
+// its target.
 std::vector<const Edge*> MultiAgentGraphOfConvexSets::GetSolutionPathForAgent(
-    const Vertex& source, const Vertex& target, const int agent_id, const int n_agents,
-    const solvers::MathematicalProgramResult& result, double tolerance) const {
+    const Vertex& source, const Vertex& target, const int agent_id,
+    const int n_agents, const solvers::MathematicalProgramResult& result,
+    double tolerance) const {
   if (!result.is_success()) {
     throw std::runtime_error(
         "Cannot extract a solution path when result.is_success() is false.");
@@ -2459,8 +2537,9 @@ std::vector<const Edge*> MultiAgentGraphOfConvexSets::GetSolutionPathForAgent(
       // continue the search.
       path_vertices.pop_back();
       if (path_vertices.empty()) {
-        throw std::runtime_error(fmt::format("No path found for agent {} from {} to {}.",
-                                             agent_id, source.name(), target.name()));
+        throw std::runtime_error(
+            fmt::format("No path found for agent {} from {} to {}.", agent_id,
+                        source.name(), target.name()));
       }
       path_edges.pop_back();
       continue;
@@ -2569,11 +2648,11 @@ void RewriteForConvexSolver(MathematicalProgram* prog) {
 
 }  // namespace
 
-// Include only edge vars, costs, constraints for a specific agent  -- LIZHUANG ADDED
+// Include only edge vars, costs, constraints for a specific agent  -- LIZHUANG
+// ADDED
 std::unique_ptr<MathematicalProgram>
 MultiAgentGraphOfConvexSets::ConstructRestrictionProgramForAgent(
-    const std::vector<const Edge*>& active_edges,
-    const int agent_id,
+    const std::vector<const Edge*>& active_edges, const int agent_id,
     const MathematicalProgramResult* initial_guess) const {
   std::unique_ptr<MathematicalProgram> prog =
       std::make_unique<MathematicalProgram>();
@@ -2635,12 +2714,12 @@ MultiAgentGraphOfConvexSets::ConstructRestrictionProgramForAgent(
   return prog;
 }
 
-
 // Multi-agent case, for a specific agent -- LIZHUANG ADDED
-void MultiAgentGraphOfConvexSets::MakeRestrictionResultLookLikeMixedIntegerForAgent(
-    const int agent_id, const int n_agents,
-    const MathematicalProgram& prog, MathematicalProgramResult* result,
-    const std::vector<const Edge*>& active_edges) const {
+void MultiAgentGraphOfConvexSets::
+    MakeRestrictionResultLookLikeMixedIntegerForAgent(
+        const int agent_id, const int n_agents, const MathematicalProgram& prog,
+        MathematicalProgramResult* result,
+        const std::vector<const Edge*>& active_edges) const {
   DRAKE_DEMAND(result != nullptr);
   DRAKE_DEMAND(agent_id >= 0 && agent_id <= n_agents);
   // TODO(russt): Add the dual variables back in for the rewritten costs.
@@ -2666,7 +2745,8 @@ void MultiAgentGraphOfConvexSets::MakeRestrictionResultLookLikeMixedIntegerForAg
   // Count placeholder variables
   // Add phi vars for all edges.
   int num_excluded_vars = edges_.size();
-  // Add edge cost slack variables for active_edges. (restriction transcription only)
+  // Add edge cost slack variables for active_edges. (restriction transcription
+  // only)
   for (const Edge* e : active_edges) {
     const auto& ea = e->agent_data(agent_id);
     for (int i = 0; i < ea.ell_.size(); ++i) {
@@ -2698,7 +2778,7 @@ void MultiAgentGraphOfConvexSets::MakeRestrictionResultLookLikeMixedIntegerForAg
     const Edge* e = pair.second.get();
     const auto& ea = e->agent_data(agent_id);
     if (std::find(active_edges.begin(), active_edges.end(), e) !=
-        active_edges.end()) { // if e is found in active_edges
+        active_edges.end()) {  // if e is found in active_edges
       // phi.
       decision_variable_index.emplace(ea.phi_.get_id(), count);
       x_val[count++] = 1.0;
@@ -2733,18 +2813,19 @@ void MultiAgentGraphOfConvexSets::MakeRestrictionResultLookLikeMixedIntegerForAg
 }
 
 // Multi-agent case, for a particular agent `agent_id`
-MathematicalProgramResult MultiAgentGraphOfConvexSets::SolveConvexRestrictionForAgent(
-    const std::vector<const Edge*>& active_edges,
-    const int agent_id, const int n_agents,
-    const GraphOfConvexSetsOptions& options,
+MathematicalProgramResult
+MultiAgentGraphOfConvexSets::SolveConvexRestrictionForAgent(
+    const std::vector<const Edge*>& active_edges, const int agent_id,
+    const int n_agents, const GraphOfConvexSetsOptions& options,
     const MathematicalProgramResult* initial_guess) const {
-
   // Construct agent-specific restriction program
   std::unique_ptr<MathematicalProgram> prog =
-      ConstructRestrictionProgramForAgent(active_edges, agent_id, initial_guess);
+      ConstructRestrictionProgramForAgent(active_edges, agent_id,
+                                          initial_guess);
   DRAKE_ASSERT(prog != nullptr);
 
-  // Choose a solver, use the restriction solver and options if they are provided.
+  // Choose a solver, use the restriction solver and options if they are
+  // provided.
   const solvers::SolverInterface* solver = nullptr;
   std::unique_ptr<solvers::SolverInterface> default_solver;
 
@@ -2763,8 +2844,8 @@ MathematicalProgramResult MultiAgentGraphOfConvexSets::SolveConvexRestrictionFor
   solver->Solve(*prog, {}, solver_options, &result);
 
   // Pretend the result as a mixed-integer programming result（with agent）
-  MakeRestrictionResultLookLikeMixedIntegerForAgent(
-    agent_id, n_agents, *prog, &result, active_edges);
+  MakeRestrictionResultLookLikeMixedIntegerForAgent(agent_id, n_agents, *prog,
+                                                    &result, active_edges);
 
   return result;
 }

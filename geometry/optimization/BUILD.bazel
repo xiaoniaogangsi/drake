@@ -637,8 +637,8 @@ drake_cc_googletest(
     num_threads = 2,
     shard_count = 8,
     deps = [
-        ":multi_agent_graph_of_convex_sets",
         ":graph_of_convex_sets",
+        ":multi_agent_graph_of_convex_sets",
         "//common/test_utilities:eigen_matrix_compare",
         "//common/test_utilities:expect_no_throw",
         "//common/test_utilities:expect_throws_message",

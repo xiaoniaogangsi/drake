@@ -1,5 +1,6 @@
 #include "drake/geometry/optimization/multi_agent_graph_of_convex_sets.h"
 
+#include <format>
 #include <forward_list>
 #include <limits>
 #include <memory>
@@ -17,6 +18,7 @@
 #include "drake/common/test_utilities/expect_throws_message.h"
 #include "drake/common/text_logging.h"
 #include "drake/common/yaml/yaml_io.h"
+#include "drake/geometry/optimization/graph_of_convex_sets.h"
 #include "drake/geometry/optimization/hpolyhedron.h"
 #include "drake/geometry/optimization/hyperellipsoid.h"
 #include "drake/geometry/optimization/point.h"
@@ -32,8 +34,6 @@
 #include "drake/solvers/osqp_solver.h"
 #include "drake/solvers/scs_solver.h"
 #include "drake/solvers/solver_options.h"
-
-#include "drake/geometry/optimization/graph_of_convex_sets.h"
 
 namespace drake {
 namespace geometry {
@@ -70,16 +70,16 @@ using ::testing::AllOf;
 using ::testing::HasSubstr;
 using ::testing::Not;
 
-const double kInf = std::numeric_limits<double>::infinity();
+// const double kInf = std::numeric_limits<double>::infinity();
 
-// namespace {
-// bool MixedIntegerSolverAvailable() {
-//   return (solvers::MosekSolver::is_available() &&
-//           solvers::MosekSolver::is_enabled()) ||
-//          (solvers::GurobiSolver::is_available() &&
-//           solvers::GurobiSolver::is_enabled());
-// }
-// }  // namespace
+namespace {
+bool MixedIntegerSolverAvailable() {
+  return (solvers::MosekSolver::is_available() &&
+          solvers::MosekSolver::is_enabled()) ||
+         (solvers::GurobiSolver::is_available() &&
+          solvers::GurobiSolver::is_enabled());
+}
+}  // namespace
 
 GTEST_TEST(GraphOfConvexSetsOptionsTest, Serialize) {
   GraphOfConvexSetsOptions options;
@@ -201,8 +201,12 @@ GTEST_TEST(MultiAgentGraphOfConvexSetsTest, GetVertexSolution) {
     map2.emplace(v2->x()[i].get_id(), i);
   }
   result2.set_decision_variable_index(map2);
-  result2.set_x_val(p2.x());
-  EXPECT_TRUE(CompareMatrices(v2->GetSolution(result2).value(), p2.x()));
+  Vector6d two_agent_vectors;
+  two_agent_vectors.segment(0, 3) = p2.x();
+  two_agent_vectors.segment(3, 3) = p2.x();
+  result2.set_x_val(two_agent_vectors);
+  EXPECT_TRUE(
+      CompareMatrices(v2->GetSolution(result2).value(), two_agent_vectors));
 }
 
 GTEST_TEST(MultiAgentGraphOfConvexSetsTest, AddEdge) {
@@ -305,100 +309,142 @@ GTEST_TEST(MultiAgentGraphOfConvexSetsTest, RemoveVertex) {
   EXPECT_EQ(v1->outgoing_edges().size(), 0);
 }
 
-// class GraphOfConvexSetsTestFixture : public ::testing::Test {
-//  protected:
-//   GraphOfConvexSets g_;
-//   Vertex* source_{nullptr};
-//   Vertex* target_{nullptr};
+class MultiAgentGraphOfConvexSetsTestFixture : public ::testing::Test {
+ protected:
+  MultiAgentGraphOfConvexSets g_;
+  // Vertex* source_{nullptr};
+  // Vertex* target_{nullptr};
+  int n_agents_{2};  // Default number of agents for multi-agent tests
+  std::vector<Vertex*> source_;
+  std::vector<Vertex*> target_;
 
-//   void CheckConvexRestriction(const MathematicalProgramResult& result,
-//                               double cost_tol) const {
-//     MathematicalProgramResult restriction_result = DoSolveConvexRestriction();
+  // Initialize a basic multi-agent graph for testing
+  void SetUpBasicMultiAgentGraph(int num_agents = 2) {
+    n_agents_ = num_agents;
+    source_.resize(n_agents_);
+    target_.resize(n_agents_);
+    for (int a = 0; a < n_agents_; ++a) {
+      // The sources and targets both use single-agent version of Vertex
+      source_[a] = g_.AddVertex(Point(Vector2d(1. * a, 1. * a)),
+                                std::format("source{}", a));
+      target_[a] = g_.AddVertex(Point(Vector2d(10. * a, 10. * a)),
+                                std::format("target{}", a));
+    }
+  }
 
-//     log()->info("Solved convex restriction with {}",
-//                 restriction_result.get_solver_id().name());
-//     // Confirm that we get a convex solver (not an NLP solver).
-//     if (MixedIntegerSolverAvailable()) {
-//       EXPECT_TRUE(
-//           restriction_result.get_solver_id() == solvers::MosekSolver::id() ||
-//           restriction_result.get_solver_id() == solvers::GurobiSolver::id());
-//     }
-//     EXPECT_TRUE(restriction_result.is_success());
-//     EXPECT_NEAR(result.get_optimal_cost(),
-//                 restriction_result.get_optimal_cost(), cost_tol);
+  // Helper to verify that a vertex solution is valid for a specific agent
+  void VerifyAgentSolution(const Vertex* vertex, const int agent_id,
+                           const MathematicalProgramResult& result) const {
+    // The solution should have dimensions for all agents
+    std::optional<Eigen::VectorXd> solution = vertex->GetSolution(result);
+    ASSERT_TRUE(solution.has_value());
+    EXPECT_EQ(solution.value().size(),
+              n_agents_ * vertex->set().ambient_dimension());
+  }
 
-//     // Don't check that the values are exactly the same in case the convex
-//     // program has multiple solutions. Instead we just check that both results
-//     // achieve the same cost and are feasible for the convex sets
-//     for (const auto* v : {source_, target_}) {
-//       // Relax the expected cost tolerance for the individual vertex values
-//       // relative to the tolerance of the overall cost. This is reasonable as
-//       // the norm of a vector is always less than the sum of the norm of the
-//       // components.
-//       EXPECT_NEAR(v->GetSolutionCost(result).value(),
-//                   v->GetSolutionCost(restriction_result).value(),
-//                   cost_tol * 10);
-//       const std::optional<Eigen::VectorXd> x_result = v->GetSolution(result);
-//       const std::optional<Eigen::VectorXd> x_restriction_result =
-//           v->GetSolution(restriction_result);
-//       ASSERT_TRUE(x_result.has_value());
-//       ASSERT_TRUE(x_restriction_result.has_value());
-//       constexpr double kTol = 1e-6;
-//       EXPECT_TRUE(v->set().PointInSet(x_result.value(), kTol));
-//       EXPECT_TRUE(v->set().PointInSet(x_restriction_result.value(), kTol));
-//     }
+  // Helper to verify that edge solutions are valid for a specific agent
+  void VerifyAgentEdgeSolution(const Edge* edge, const int agent_id,
+                               const MathematicalProgramResult& result) const {
+    std::optional<Eigen::VectorXd> phi_xu =
+        edge->GetSolutionPhiXuForAgent(result, agent_id);
+    std::optional<Eigen::VectorXd> phi_xv =
+        edge->GetSolutionPhiXvForAgent(result, agent_id);
+    // At least one of them should have a value if the edge is active
+    EXPECT_TRUE(phi_xu.has_value() || phi_xv.has_value());
+  }
 
-//     DoExtraConvexRestrictionChecks(result, restriction_result);
-//   }
+  void CheckConvexRestriction(const MathematicalProgramResult& result,
+                              double cost_tol) const {
+    MathematicalProgramResult restriction_result = DoSolveConvexRestriction();
 
-//   virtual void DoExtraConvexRestrictionChecks(
-//       const MathematicalProgramResult& result,
-//       const MathematicalProgramResult& restriction_result) const {
-//     // Can be overridden by subclasses to add extra checks.
-//   }
+    log()->info("Solved convex restriction with {}",
+                restriction_result.get_solver_id().name());
+    // Confirm that we get a convex solver (not an NLP solver).
+    if (MixedIntegerSolverAvailable()) {
+      EXPECT_TRUE(
+          restriction_result.get_solver_id() == solvers::MosekSolver::id() ||
+          restriction_result.get_solver_id() == solvers::GurobiSolver::id());
+    }
+    EXPECT_TRUE(restriction_result.is_success());
+    EXPECT_NEAR(result.get_optimal_cost(),
+                restriction_result.get_optimal_cost(), cost_tol);
 
-//   virtual MathematicalProgramResult DoSolveConvexRestriction() const = 0;
-// };
+    // Don't check that the values are exactly the same in case the convex
+    // program has multiple solutions. Instead we just check that both results
+    // achieve the same cost and are feasible for the convex sets
+    for (int a = 0; a < n_agents_; ++a) {
+      Vertex* a_source = source_[a];
+      Vertex* a_target = target_[a];
+      for (const auto* v : {a_source, a_target}) {
+        // Relax the expected cost tolerance for the individual vertex values
+        // relative to the tolerance of the overall cost. This is reasonable as
+        // the norm of a vector is always less than the sum of the norm of the
+        // components.
+        EXPECT_NEAR(v->GetSolutionCost(result).value(),
+                    v->GetSolutionCost(restriction_result).value(),
+                    cost_tol * 10);
+        const std::optional<Eigen::VectorXd> x_result = v->GetSolution(result);
+        const std::optional<Eigen::VectorXd> x_restriction_result =
+            v->GetSolution(restriction_result);
+        ASSERT_TRUE(x_result.has_value());
+        ASSERT_TRUE(x_restriction_result.has_value());
+        constexpr double kTol = 1e-6;
+        EXPECT_TRUE(v->set().PointInSet(x_result.value(), kTol));
+        EXPECT_TRUE(v->set().PointInSet(x_restriction_result.value(), kTol));
+      }
+    }
 
-// /*
-// ┌───┐       ┌───┐
-// │ u ├───e──►│ v │
-// └───┘       └───┘
-// */
-// class TwoPoints : public ::testing::Test {
-//  protected:
-//   TwoPoints() : pu_{Vector2d(1., 2.)}, pv_{Vector3d(3., 4., 5.)} {
-//     u_ = g_.AddVertex(pu_, "u");
-//     v_ = g_.AddVertex(pv_, "v");
-//     e_ = g_.AddEdge(u_, v_, "e");
-//   }
+    DoExtraConvexRestrictionChecks(result, restriction_result);
+  }
 
-//   GraphOfConvexSets g_{};
-//   Point pu_;
-//   Point pv_;
-//   Vertex* u_;
-//   Vertex* v_;
-//   Edge* e_;
-// };
+  virtual void DoExtraConvexRestrictionChecks(
+      const MathematicalProgramResult& result,
+      const MathematicalProgramResult& restriction_result) const {
+    // Can be overridden by subclasses to add extra checks.
+  }
 
-// TEST_F(TwoPoints, Basic) {
-//   EXPECT_EQ(e_->name(), "e");
-//   EXPECT_EQ(e_->u().name(), u_->name());
-//   EXPECT_EQ(e_->v().name(), v_->name());
+  virtual MathematicalProgramResult DoSolveConvexRestriction() const = 0;
+};
 
-//   EXPECT_EQ(Variables(e_->xu()), Variables(u_->x()));
-//   EXPECT_EQ(Variables(e_->xv()), Variables(v_->x()));
+/*
+┌───┐       ┌───┐
+│ u ├───e──►│ v │
+└───┘       └───┘
+*/
+class TwoPoints : public ::testing::Test {
+ protected:
+  TwoPoints() : pu_{Vector2d(1., 2.)}, pv_{Vector3d(3., 4., 5.)} {
+    u_ = g_.AddVertex(pu_, "u", 2);
+    v_ = g_.AddVertex(pv_, "v", 2);
+    e_ = g_.AddEdge(u_, v_, "e", 2);
+  }
 
-//   auto vertices = g_.Vertices();
-//   EXPECT_EQ(vertices.at(0), u_);
-//   EXPECT_EQ(vertices.at(1), v_);
+  MultiAgentGraphOfConvexSets g_{};
+  Point pu_;
+  Point pv_;
+  Vertex* u_;
+  Vertex* v_;
+  Edge* e_;
+};
 
-//   EXPECT_EQ(g_.Edges().at(0), e_);
-// }
+TEST_F(TwoPoints, Basic) {
+  EXPECT_EQ(e_->name(), "e");
+  EXPECT_EQ(e_->u().name(), u_->name());
+  EXPECT_EQ(e_->v().name(), v_->name());
+
+  EXPECT_EQ(Variables(e_->xu()), Variables(u_->x()));
+  EXPECT_EQ(Variables(e_->xv()), Variables(v_->x()));
+
+  auto vertices = g_.Vertices();
+  EXPECT_EQ(vertices.at(0), u_);
+  EXPECT_EQ(vertices.at(1), v_);
+
+  EXPECT_EQ(g_.Edges().at(0), e_);
+}
 
 // // Confirms that we can add costs (both ways) and get the solution.
-// // The correctness of the added costs will be established by the solution tests.
-// TEST_F(TwoPoints, AddCost) {
+// // The correctness of the added costs will be established by the solution
+// tests. TEST_F(TwoPoints, AddCost) {
 //   auto b0 = e_->AddCost((e_->xv().head<2>() - e_->xu()).squaredNorm());
 //   auto cost = std::make_shared<LinearCost>(Vector2d::Zero(), 0.1);
 //   auto b1 = e_->AddCost(Binding(cost, e_->xu()));
@@ -428,7 +474,8 @@ GTEST_TEST(MultiAgentGraphOfConvexSetsTest, RemoveVertex) {
 //   DRAKE_EXPECT_THROWS_MESSAGE(v_->AddCost(other_var), ".*IsSubsetOf.*");
 
 //   // If no transcription is specified, the constraint won't be added.
-//   EXPECT_THROW(e_->AddCost((e_->xv().head<2>() - e_->xu()).squaredNorm(), {}),
+//   EXPECT_THROW(e_->AddCost((e_->xv().head<2>() - e_->xu()).squaredNorm(),
+//   {}),
 //                std::exception);
 //   EXPECT_THROW(e_->AddCost(Binding(cost, e_->xu()), {}), std::exception);
 //   EXPECT_THROW(u_->AddCost((v_->x() + Vector3d::Ones()).squaredNorm(), {}),
@@ -455,7 +502,8 @@ GTEST_TEST(MultiAgentGraphOfConvexSetsTest, RemoveVertex) {
 // }
 
 // // Confirms that we can add constraints (both ways).
-// // The correctness of the added constraints will be established by the solution
+// // The correctness of the added constraints will be established by the
+// solution
 // // tests.
 // TEST_F(TwoPoints, AddConstraint) {
 //   auto b0 = e_->AddConstraint(e_->xv().head<2>() == e_->xu());
@@ -545,10 +593,9 @@ GTEST_TEST(MultiAgentGraphOfConvexSetsTest, RemoveVertex) {
 //   EXPECT_TRUE(result.is_success());
 //   EXPECT_EQ(result.get_solver_id(), options.restriction_solver->solver_id());
 
-//   // With the rounding on, the reported solver should be the restriction solver
-//   options.max_rounded_paths = 1;
-//   result = g_.SolveShortestPath(*u_, *v_, options);
-//   EXPECT_TRUE(result.is_success());
+//   // With the rounding on, the reported solver should be the restriction
+//   solver options.max_rounded_paths = 1; result = g_.SolveShortestPath(*u_,
+//   *v_, options); EXPECT_TRUE(result.is_success());
 //   EXPECT_EQ(result.get_solver_id(), options.restriction_solver->solver_id());
 
 //   // Even if we add a constraint that makes only the rounding fail, the
@@ -558,16 +605,20 @@ GTEST_TEST(MultiAgentGraphOfConvexSetsTest, RemoveVertex) {
 //   EXPECT_FALSE(result.is_success());
 //   EXPECT_EQ(result.get_solver_id(), options.restriction_solver->solver_id());
 
-//   // Adding infeasible constraints to the relaxation should fail the relaxation,
-//   // hence solving the restriction will never be reached and the reported solver
+//   // Adding infeasible constraints to the relaxation should fail the
+//   relaxation,
+//   // hence solving the restriction will never be reached and the reported
+//   solver
 //   // should be the solver used in the relaxation.
 //   e_->AddConstraint(e_->xv()[0] == 0.0, {Transcription::kRelaxation});
 //   result = g_.SolveShortestPath(*u_, *v_, options);
 //   EXPECT_FALSE(result.is_success());
 //   EXPECT_EQ(result.get_solver_id(), options.solver->solver_id());
 
-//   // Since we haven't added any infeasible constraints to the MIP transcription,
-//   // we expect the solve to be successful and the reported solver to be the MIP
+//   // Since we haven't added any infeasible constraints to the MIP
+//   transcription,
+//   // we expect the solve to be successful and the reported solver to be the
+//   MIP
 //   // solver.
 //   if (solvers::MosekSolver::is_available() &&
 //       solvers::MosekSolver::is_enabled()) {
@@ -580,7 +631,8 @@ GTEST_TEST(MultiAgentGraphOfConvexSetsTest, RemoveVertex) {
 //   }
 
 //   // Test the preprocessing solver. Since the results of these solves are not
-//   // reported, we call the OSQP solver and expect an error -- this solver cannot
+//   // reported, we call the OSQP solver and expect an error -- this solver
+//   cannot
 //   // handle LPs, the preprocessing problems are LPs.
 //   solvers::OsqpSolver osqp;
 //   options.preprocessing = true;
@@ -635,7 +687,8 @@ GTEST_TEST(MultiAgentGraphOfConvexSetsTest, RemoveVertex) {
 //   }
 // }
 
-// // Verify that assigning a transcription to a constraint adds it to the correct
+// // Verify that assigning a transcription to a constraint adds it to the
+// correct
 // // problem. This test will be split into multiple cases.
 // TEST_F(TwoPoints, VerifyTranscriptionAssignmentBaseline) {
 //   // We will be adding a few feasible constraints to all transcriptions, even
@@ -688,9 +741,11 @@ GTEST_TEST(MultiAgentGraphOfConvexSetsTest, RemoveVertex) {
 
 //   // The MIP should be successful.
 //   e_->AddConstraint(e_->xv()[0] == 0.0,
-//                     {Transcription::kRelaxation, Transcription::kRestriction});
+//                     {Transcription::kRelaxation,
+//                     Transcription::kRestriction});
 //   u_->AddConstraint(u_->x()[0] == 0.0,
-//                     {Transcription::kRelaxation, Transcription::kRestriction});
+//                     {Transcription::kRelaxation,
+//                     Transcription::kRestriction});
 //   if (MixedIntegerSolverAvailable()) {
 //     options.convex_relaxation = false;
 //     EXPECT_TRUE(g_.SolveShortestPath(*u_, *v_, options).is_success());
@@ -782,7 +837,8 @@ GTEST_TEST(MultiAgentGraphOfConvexSetsTest, RemoveVertex) {
 // GTEST_TEST(GraphOfConvexSetsTest, InitialGuess) {
 //   GraphOfConvexSets gcs;
 
-//   // A source (with 1 free variable) and a target (a fixed point), with an edge
+//   // A source (with 1 free variable) and a target (a fixed point), with an
+//   edge
 //   // between them.
 //   Vertex* s = gcs.AddVertex(HPolyhedron::MakeUnitBox(1));
 //   Vertex* t = gcs.AddVertex(Point(Vector1d(1.0)));
@@ -817,11 +873,8 @@ GTEST_TEST(MultiAgentGraphOfConvexSetsTest, RemoveVertex) {
 //                               ".*total.*ambient.*dimension.*");
 // }
 
-// /* A graph with one edge definitely on the optimal path, and one definitely off
-// it.
-// ┌──────┐         ┌──────┐
-// │source├──e_on──►│target│
-// └───┬──┘         └──────┘
+// /* A graph with one edge definitely on the optimal path, and one definitely
+// off it. ┌──────┐         ┌──────┐ │source├──e_on──►│target│ └───┬──┘ └──────┘
 //     │e_off
 //     │
 // ┌───▼──┐
@@ -847,7 +900,8 @@ GTEST_TEST(MultiAgentGraphOfConvexSetsTest, RemoveVertex) {
 //     options_.convex_relaxation = true;
 //   }
 
-//   void CheckConvexRestriction(const MathematicalProgramResult& result) const {
+//   void CheckConvexRestriction(const MathematicalProgramResult& result) const
+//   {
 //     GraphOfConvexSetsTestFixture::CheckConvexRestriction(result, 1e-4);
 //   }
 
@@ -873,7 +927,8 @@ GTEST_TEST(MultiAgentGraphOfConvexSetsTest, RemoveVertex) {
 //   GraphOfConvexSetsOptions options_;
 // };
 
-// // Confirms that we get a helpful error message when we try to solve a problem
+// // Confirms that we get a helpful error message when we try to solve a
+// problem
 // // and no MIP solver is available.
 // TEST_F(ThreePoints, NoMixedIntegerSolverAvailable) {
 //   if (MixedIntegerSolverAvailable()) {
@@ -892,7 +947,8 @@ GTEST_TEST(MultiAgentGraphOfConvexSetsTest, RemoveVertex) {
 //     EXPECT_NE(
 //         std::string(err.what())
 //             .find(
-//                 "no solver available that can solve the mixed-integer version"),
+//                 "no solver available that can solve the mixed-integer
+//                 version"),
 //         std::string::npos);
 //   } catch (...) {
 //     GTEST_NONFATAL_FAILURE_("Should have thrown std::exception.");
@@ -913,8 +969,9 @@ GTEST_TEST(MultiAgentGraphOfConvexSetsTest, RemoveVertex) {
 
 //   // Check GetSolutionCost overloads which take the binding.
 //   EXPECT_NEAR(e_on_->GetSolutionCost(result, e_on_cost).value(), 1.0, 1e-6);
-//   EXPECT_NEAR(e_off_->GetSolutionCost(result, e_off_cost).value(), 0.0, 1e-6);
-//   EXPECT_NEAR(source_->GetSolutionCost(result, source_cost).value(), 1.0, 1e-6);
+//   EXPECT_NEAR(e_off_->GetSolutionCost(result, e_off_cost).value(), 0.0,
+//   1e-6); EXPECT_NEAR(source_->GetSolutionCost(result,
+//   source_cost).value(), 1.0, 1e-6);
 //   DRAKE_EXPECT_THROWS_MESSAGE(e_on_->GetSolutionCost(result, e_off_cost),
 //                               ".*not registered with this edge.*");
 //   DRAKE_EXPECT_THROWS_MESSAGE(target_->GetSolutionCost(result, source_cost),
@@ -1016,7 +1073,8 @@ GTEST_TEST(MultiAgentGraphOfConvexSetsTest, RemoveVertex) {
 //   source_->AddCost(a.dot(source_->x()) + b);
 //   auto result = g_.SolveShortestPath(*source_, *target_, options_);
 //   ASSERT_TRUE(result.is_success());
-//   EXPECT_NEAR(e_on_->GetSolutionCost(result).value(), a.dot(p_source_.x()) + b,
+//   EXPECT_NEAR(e_on_->GetSolutionCost(result).value(), a.dot(p_source_.x()) +
+//   b,
 //               1e-6);
 //   EXPECT_NEAR(e_off_->GetSolutionCost(result).value(), 0.0, 1e-6);
 //   EXPECT_NEAR(source_->GetSolutionCost(result).value(),
@@ -1090,8 +1148,8 @@ GTEST_TEST(MultiAgentGraphOfConvexSetsTest, RemoveVertex) {
 //   Environment env{};
 //   env.insert(e_on_->xu(), p_source_.x());
 //   env.insert(e_on_->xv(), p_target_.x());
-//   EXPECT_NEAR(e_on_->GetSolutionCost(result).value(), cost.Evaluate(env), 1e-4);
-//   EXPECT_NEAR(e_off_->GetSolutionCost(result).value(), 0.0, 4e-6);
+//   EXPECT_NEAR(e_on_->GetSolutionCost(result).value(), cost.Evaluate(env),
+//   1e-4); EXPECT_NEAR(e_off_->GetSolutionCost(result).value(), 0.0, 4e-6);
 //   EXPECT_NEAR(source_->GetSolutionCost(result).value(),
 //               vertex_cost.Evaluate(env), 1e-4);
 //   EXPECT_NEAR(target_->GetSolutionCost(result).value(), 0.0, 1e-6);
@@ -1117,8 +1175,8 @@ GTEST_TEST(MultiAgentGraphOfConvexSetsTest, RemoveVertex) {
 //   Environment env{};
 //   env.insert(e_on_->xu(), p_source_.x());
 //   env.insert(e_on_->xv(), p_target_.x());
-//   EXPECT_NEAR(e_on_->GetSolutionCost(result).value(), cost.Evaluate(env), 5e-5);
-//   EXPECT_NEAR(e_off_->GetSolutionCost(result).value(), 0.0, 4e-6);
+//   EXPECT_NEAR(e_on_->GetSolutionCost(result).value(), cost.Evaluate(env),
+//   5e-5); EXPECT_NEAR(e_off_->GetSolutionCost(result).value(), 0.0, 4e-6);
 //   EXPECT_NEAR(source_->GetSolutionCost(result).value(),
 //               vertex_cost.Evaluate(env), 2e-4);
 //   EXPECT_NEAR(target_->GetSolutionCost(result).value(), 0.0, 1e-6);
@@ -1136,7 +1194,8 @@ GTEST_TEST(MultiAgentGraphOfConvexSetsTest, RemoveVertex) {
 //   const Matrix2d R_v = R.topLeftCorner<2, 2>();
 //   const Vector2d d_v = d.head<2>();
 //   auto vertex_cost = std::make_shared<solvers::QuadraticCost>(
-//       2.0 * R_v.transpose() * R_v, 2.0 * R_v.transpose() * d_v, d_v.dot(d_v));
+//       2.0 * R_v.transpose() * R_v, 2.0 * R_v.transpose() * d_v,
+//       d_v.dot(d_v));
 //   source_->AddCost(solvers::Binding(vertex_cost, source_->x()));
 //   auto result = g_.SolveShortestPath(*source_, *target_, options_);
 //   if (result.get_solver_id() == solvers::IpoptSolver::id()) {
@@ -1145,7 +1204,8 @@ GTEST_TEST(MultiAgentGraphOfConvexSetsTest, RemoveVertex) {
 //   ASSERT_TRUE(result.is_success());
 //   Vector4d x;
 //   x << p_source_.x(), p_target_.x();
-//   EXPECT_NEAR(e_on_->GetSolutionCost(result).value(), (R * x + d).squaredNorm(),
+//   EXPECT_NEAR(e_on_->GetSolutionCost(result).value(), (R * x +
+//   d).squaredNorm(),
 //               2e-5);
 //   EXPECT_NEAR(e_off_->GetSolutionCost(result).value(), 0.0, 1e-6);
 //   EXPECT_NEAR(source_->GetSolutionCost(result).value(),
@@ -1168,7 +1228,8 @@ GTEST_TEST(MultiAgentGraphOfConvexSetsTest, RemoveVertex) {
 // // Costs must be strictly positive.
 // TEST_F(ThreePoints, QuadraticCost6) {
 //   source_->AddCost(
-//       static_cast<const VectorX<Expression>>(source_->x()).squaredNorm() - 2.0);
+//       static_cast<const VectorX<Expression>>(source_->x()).squaredNorm()
+//       - 2.0);
 
 //   DRAKE_EXPECT_THROWS_MESSAGE(
 //       g_.SolveShortestPath(*source_, *target_, options_),
@@ -1390,7 +1451,8 @@ GTEST_TEST(MultiAgentGraphOfConvexSetsTest, RemoveVertex) {
 //   EXPECT_NEAR(target_->GetSolutionCost(result).value(), 0.0, 1e-6);
 //   EXPECT_NEAR(sink_->GetSolutionCost(result).value(), 0.0, 1e-6);
 //   if (result.get_solver_id() == solvers::CsdpSolver::id()) {
-//     // CSDP 6.2.0 gets the wrong cost -- but correct solution -- in the convex
+//     // CSDP 6.2.0 gets the wrong cost -- but correct solution -- in the
+//     convex
 //     // restriction (on linux only).
 //     return;
 //   }
@@ -1438,7 +1500,8 @@ GTEST_TEST(MultiAgentGraphOfConvexSetsTest, RemoveVertex) {
 //     options_.convex_relaxation = true;
 //   }
 
-//   void CheckConvexRestriction(const MathematicalProgramResult& result) const {
+//   void CheckConvexRestriction(const MathematicalProgramResult& result) const
+//   {
 //     GraphOfConvexSetsTestFixture::CheckConvexRestriction(result, 1e-6);
 //   }
 
@@ -1463,10 +1526,13 @@ GTEST_TEST(MultiAgentGraphOfConvexSetsTest, RemoveVertex) {
 
 // // Ipopt fails to solve the QuadraticCost and L2NormCost tests above (both of
 // // which use Lorentz cone constraints), complaining that the problem has "Too
-// // few degrees of freedom"; in other words that it has redundant constraints. Of
-// // course that is true (since the sets were just Points), but Gurobi, Mosek, and
+// // few degrees of freedom"; in other words that it has redundant constraints.
+// Of
+// // course that is true (since the sets were just Points), but Gurobi, Mosek,
+// and
 // // Snopt all solve it just fine.  This test confirms that Ipopt can solve
-// // shortest path problems with the QuadraticCost when the points are changed to
+// // shortest path problems with the QuadraticCost when the points are changed
+// to
 // // a boxes.
 // //
 // // Adding a similar test corresponding to the L2NormCost test caused
@@ -1487,16 +1553,18 @@ GTEST_TEST(MultiAgentGraphOfConvexSetsTest, RemoveVertex) {
 // TEST_F(ThreeBoxes, NonConvexRounding) {
 //   /* Consider the following problem:
 //   - Each of the sets source, target and sink are unit boxes in 2D.
-//   - They further constrain the feasible set to be in between the border of the
+//   - They further constrain the feasible set to be in between the border of
+//   the
 //     unit box and the exterior of the unit circle.
 //   - In addition, the point in the source region must be in the upper left
-//     quadrant, the point in the target region must be in the upper right quadrant
-//     and the point in the sink region must be in the lower left quadrant.
-//     The quadrants are padded by 0.1 to exclude 0.0 from the feasible set.
+//     quadrant, the point in the target region must be in the upper right
+//     quadrant and the point in the sink region must be in the lower left
+//     quadrant. The quadrants are padded by 0.1 to exclude 0.0 from the
+//     feasible set.
 //   - We wish to minimize the squared L2 norm of the difference between the
-//     points. We expect that source to target will be the shortest path since the
-//     optimal difference is zero, while the distance between source and sink will
-//     be greater than one.
+//     points. We expect that source to target will be the shortest path since
+//     the optimal difference is zero, while the distance between source and
+//     sink will be greater than one.
 
 //         Source                            Target
 //   ┌────────────┐                     ┌────────────┐
@@ -1650,12 +1718,14 @@ GTEST_TEST(MultiAgentGraphOfConvexSetsTest, RemoveVertex) {
 //   */
 
 //   constraints_relaxation.push_back(
-//       sink_->AddConstraint(sink_->x()[0] >= 0.5, {Transcription::kRelaxation}));
+//       sink_->AddConstraint(sink_->x()[0] >= 0.5,
+//       {Transcription::kRelaxation}));
 //   constraints_relaxation.push_back(sink_->AddConstraint(
 //       sink_->x()[1] <= -0.5, {Transcription::kRelaxation}));
 
 //   constraints_restriction.push_back(
-//       sink_->AddConstraint(pow(sink_->x()[0], 2) + pow(sink_->x()[1], 2) >= 1.0,
+//       sink_->AddConstraint(pow(sink_->x()[0], 2) + pow(sink_->x()[1], 2)
+//       >= 1.0,
 //                            {Transcription::kRestriction}));
 //   constraints_restriction.push_back(sink_->AddConstraint(
 //       sink_->x()[0] >= 0.1, {Transcription::kRestriction}));
@@ -1711,7 +1781,8 @@ GTEST_TEST(MultiAgentGraphOfConvexSetsTest, RemoveVertex) {
 //   // Verify that the solution includes source to target.
 //   EXPECT_FALSE(sink_->GetSolution(result).has_value());
 
-//   // Retest with no parallelism to verify that parallel rounding doesn't change
+//   // Retest with no parallelism to verify that parallel rounding doesn't
+//   change
 //   // behavior.
 //   options_.parallelism = Parallelism::None();
 //   result = g_.SolveShortestPath(*source_, *target_, options_);
@@ -1731,9 +1802,9 @@ GTEST_TEST(MultiAgentGraphOfConvexSetsTest, RemoveVertex) {
 //   source_->AddConstraint(source_->x() == -b);
 //   auto result = g_.SolveShortestPath(*source_, *target_, options_);
 //   ASSERT_TRUE(result.is_success());
-//   EXPECT_TRUE(CompareMatrices(source_->GetSolution(result).value(), -b, 1e-6));
-//   EXPECT_TRUE(CompareMatrices(target_->GetSolution(result).value(), b, 1e-6));
-//   EXPECT_FALSE(sink_->GetSolution(result).has_value());
+//   EXPECT_TRUE(CompareMatrices(source_->GetSolution(result).value(), -b,
+//   1e-6)); EXPECT_TRUE(CompareMatrices(target_->GetSolution(result).value(),
+//   b, 1e-6)); EXPECT_FALSE(sink_->GetSolution(result).has_value());
 //   CheckConvexRestriction(result);
 // }
 
@@ -1758,7 +1829,8 @@ GTEST_TEST(MultiAgentGraphOfConvexSetsTest, RemoveVertex) {
 //   auto result = g_.SolveShortestPath(*source_, *target_, options_);
 //   ASSERT_TRUE(result.is_success());
 //   EXPECT_TRUE(
-//       CompareMatrices(Aeq_v * source_->GetSolution(result).value(), beq, 1e-6));
+//       CompareMatrices(Aeq_v * source_->GetSolution(result).value(), beq,
+//       1e-6));
 //   EXPECT_TRUE(CompareMatrices(
 //       Aeq.leftCols(2) * source_->GetSolution(result).value() +
 //           Aeq.rightCols(2) * target_->GetSolution(result).value(),
@@ -1784,7 +1856,8 @@ GTEST_TEST(MultiAgentGraphOfConvexSetsTest, RemoveVertex) {
 //       (source_->GetSolution(result).value().array() <= -b.array() + 1e-6)
 //           .all());
 //   EXPECT_TRUE(
-//       (target_->GetSolution(result).value().array() >= b.array() - 1e-6).all());
+//       (target_->GetSolution(result).value().array() >= b.array() -
+//       1e-6).all());
 //   EXPECT_FALSE(sink_->GetSolution(result).has_value());
 //   CheckConvexRestriction(result);
 // }
@@ -1852,7 +1925,8 @@ GTEST_TEST(MultiAgentGraphOfConvexSetsTest, RemoveVertex) {
 //       (source_->GetSolution(result).value().array() <= -b.array() + 1e-6)
 //           .all());
 //   EXPECT_TRUE(
-//       (target_->GetSolution(result).value().array() >= b.array() - 1e-6).all());
+//       (target_->GetSolution(result).value().array() >= b.array() -
+//       1e-6).all());
 //   EXPECT_FALSE(sink_->GetSolution(result).has_value());
 //   CheckConvexRestriction(result);
 // }
@@ -2080,8 +2154,8 @@ GTEST_TEST(MultiAgentGraphOfConvexSetsTest, RemoveVertex) {
 //   // min max(1/x, 1/y)
 //   // ⇔ min k st. k ≥ 1/x, k ≥ 1/y
 //   // ⇔ min k st. k * x ≥ 1, k * y ≥ 1
-//   // ⇔ min k st. [k; x; 1] ∈ RotatedLorentzCone, [k; y; 1] ∈ RotatedLorentzCone,
-//   auto k = e_on_->NewSlackVariables(1, "k")[0];
+//   // ⇔ min k st. [k; x; 1] ∈ RotatedLorentzCone, [k; y; 1] ∈
+//   RotatedLorentzCone, auto k = e_on_->NewSlackVariables(1, "k")[0];
 //   e_on_->AddCost(k);
 
 //   auto target_x = e_on_->xv()[0];
@@ -2192,7 +2266,8 @@ GTEST_TEST(MultiAgentGraphOfConvexSetsTest, RemoveVertex) {
 //       g_.SolveConvexRestriction(std::vector<const Edge*>{e_on_}, options_);
 //   ASSERT_TRUE(restriction_result.is_success());
 
-//   EXPECT_NEAR(result.get_optimal_cost(), restriction_result.get_optimal_cost(),
+//   EXPECT_NEAR(result.get_optimal_cost(),
+//   restriction_result.get_optimal_cost(),
 //               1e-6);
 //   EXPECT_FALSE(sink_->GetSolution(result).has_value());
 //   EXPECT_FALSE(sink_->GetSolution(restriction_result).has_value());
@@ -2225,8 +2300,9 @@ GTEST_TEST(MultiAgentGraphOfConvexSetsTest, RemoveVertex) {
 //   Vertex* source_replica = replica.AddVertexFromTemplate(*source_);
 //   Vertex* target_replica = replica.AddVertexFromTemplate(*target_);
 //   Vertex* sink_replica = replica.AddVertexFromTemplate(*sink_);
-//   EXPECT_EQ(source_replica->ambient_dimension(), source_->ambient_dimension());
-//   EXPECT_EQ(source_replica->GetCosts().size(), source_->GetCosts().size());
+//   EXPECT_EQ(source_replica->ambient_dimension(),
+//   source_->ambient_dimension()); EXPECT_EQ(source_replica->GetCosts().size(),
+//   source_->GetCosts().size());
 //   EXPECT_EQ(source_replica->GetConstraints().size(),
 //             source_->GetConstraints().size());
 
@@ -2273,13 +2349,16 @@ GTEST_TEST(MultiAgentGraphOfConvexSetsTest, RemoveVertex) {
 //       clone->SolveShortestPath(*source_clone, *target_clone, options_);
 //   ASSERT_TRUE(clone_result.is_success());
 
-//   EXPECT_NEAR(result.get_optimal_cost(), clone_result.get_optimal_cost(), 1e-6);
+//   EXPECT_NEAR(result.get_optimal_cost(), clone_result.get_optimal_cost(),
+//   1e-6);
 // }
 
-// // A simple shortest-path problem where the continuous variables do not affect
-// // the problem (they are all equality constrained).  The GraphOfConvexSets class
-// // should still solve the problem, and the convex relaxation should be optimal.
-// GTEST_TEST(ShortestPathTest, ClassicalShortestPath) {
+// // A simple shortest-path problem where the continuous variables do not
+// affect
+// // the problem (they are all equality constrained).  The GraphOfConvexSets
+// class
+// // should still solve the problem, and the convex relaxation should be
+// optimal. GTEST_TEST(ShortestPathTest, ClassicalShortestPath) {
 //   GraphOfConvexSets spp;
 
 //   std::vector<Vertex*> v(5);
@@ -2372,11 +2451,13 @@ GTEST_TEST(MultiAgentGraphOfConvexSetsTest, RemoveVertex) {
 //   GraphOfConvexSets spp;
 
 //   spp.AddVertex(Point(Vector2d(0, 0)));
-//   spp.AddVertex(HPolyhedron::MakeBox(Vector2d(1.3, 1.3), Vector2d(2.7, 2.7)));
-//   spp.AddVertex(HPolyhedron::MakeBox(Vector2d(3.3, 1.3), Vector2d(4.7, 2.7)));
-//   spp.AddVertex(HPolyhedron::MakeBox(Vector2d(1.3, -2.7), Vector2d(2.7, -1.3)));
-//   spp.AddVertex(HPolyhedron::MakeBox(Vector2d(3.3, -2.7), Vector2d(4.7, -1.3)));
-//   spp.AddVertex(Point(Vector2d(6, 0)));
+//   spp.AddVertex(HPolyhedron::MakeBox(Vector2d(1.3, 1.3),
+//   Vector2d(2.7, 2.7)));
+//   spp.AddVertex(HPolyhedron::MakeBox(Vector2d(3.3, 1.3),
+//   Vector2d(4.7, 2.7))); spp.AddVertex(HPolyhedron::MakeBox(Vector2d(1.3,
+//   -2.7), Vector2d(2.7, -1.3)));
+//   spp.AddVertex(HPolyhedron::MakeBox(Vector2d(3.3, -2.7), Vector2d(4.7,
+//   -1.3))); spp.AddVertex(Point(Vector2d(6, 0)));
 
 //   auto v = spp.Vertices();
 
@@ -2432,7 +2513,8 @@ GTEST_TEST(MultiAgentGraphOfConvexSetsTest, RemoveVertex) {
 //   EXPECT_EQ(non_zero_edges, 6);
 // }
 
-// // Tests that all optimization variables are properly set, even when constrained
+// // Tests that all optimization variables are properly set, even when
+// constrained
 // // to be on or off.
 // //            ┌──┐
 // //   ┌───────►│v2├──────┐
@@ -2495,7 +2577,8 @@ GTEST_TEST(MultiAgentGraphOfConvexSetsTest, RemoveVertex) {
 //   }
 
 //   // Confirm that variables for edges that are turned off are properly set.
-//   // This check is necessary now that these variables have been removed from the
+//   // This check is necessary now that these variables have been removed from
+//   the
 //   // optimization problem.
 //   edge_13->AddPhiConstraint(false);
 //   {
@@ -2526,7 +2609,8 @@ GTEST_TEST(MultiAgentGraphOfConvexSetsTest, RemoveVertex) {
 //   }
 // }
 
-// // Confirms that preprocessing removes edges that cannot be on the shortest path
+// // Confirms that preprocessing removes edges that cannot be on the shortest
+// path
 // // and does not change the solution to a shortest path query.
 // class PreprocessShortestPathTest : public ::testing::Test {
 //  protected:
@@ -2580,9 +2664,11 @@ GTEST_TEST(MultiAgentGraphOfConvexSetsTest, RemoveVertex) {
 
 //   for (size_t ii = 0; ii < edges_.size(); ii++) {
 //     if (ii < 7) {
-//       EXPECT_FALSE(removed_edges.find(edges_[ii]->id()) != removed_edges.end());
+//       EXPECT_FALSE(removed_edges.find(edges_[ii]->id()) !=
+//       removed_edges.end());
 //     } else {
-//       EXPECT_TRUE(removed_edges.find(edges_[ii]->id()) != removed_edges.end());
+//       EXPECT_TRUE(removed_edges.find(edges_[ii]->id()) !=
+//       removed_edges.end());
 //     }
 //   }
 // }
@@ -2676,7 +2762,8 @@ GTEST_TEST(MultiAgentGraphOfConvexSetsTest, RemoveVertex) {
 
 //     // We do not expect to find a path in the solution with zero tolerance.
 //     DRAKE_EXPECT_THROWS_MESSAGE(
-//         spp.GetSolutionPath(*source, *target, relaxed_result, 0 /* tolerance*/),
+//         spp.GetSolutionPath(*source, *target, relaxed_result, 0 /*
+//         tolerance*/),
 //         ".*No path.*");
 //     // However, relaxing the tolerance (significantly) will find a path.
 //     EXPECT_NO_THROW(spp.GetSolutionPath(*source, *target, relaxed_result,
@@ -2701,9 +2788,11 @@ GTEST_TEST(MultiAgentGraphOfConvexSetsTest, RemoveVertex) {
 //                 ? 1e-1
 //             : (relaxed_result.get_solver_id() == solvers::CsdpSolver::id())
 //                 ? 1e-2
-//             : (relaxed_result.get_solver_id() == solvers::ClarabelSolver::id())
+//             : (relaxed_result.get_solver_id() ==
+//             solvers::ClarabelSolver::id())
 //                 ? 1e-1  // We tried to tighten the optimality/feasibility
-//                         // tolerance of Clarabel but the optimal solution still
+//                         // tolerance of Clarabel but the optimal solution
+//                         still
 //                         // match with the balanced solution very precisely.
 //                 : 1e-5;
 //         EXPECT_NEAR(relaxed_result.GetSolution(edges[ii]->phi()), 0.5, tol);
@@ -2730,8 +2819,10 @@ GTEST_TEST(MultiAgentGraphOfConvexSetsTest, RemoveVertex) {
 
 //     if (solvers::MosekSolver::is_available() &&
 //         solvers::MosekSolver::is_enabled()) {
-//       // Test restriction_solver_options by setting the maximum iterations to 0,
-//       // which is equivalent to not solving the rounding problem. Thus it should
+//       // Test restriction_solver_options by setting the maximum iterations to
+//       0,
+//       // which is equivalent to not solving the rounding problem. Thus it
+//       should
 //       // fail.
 //       solvers::MosekSolver mosek_solver;
 //       options.solver = &mosek_solver;
@@ -2749,11 +2840,13 @@ GTEST_TEST(MultiAgentGraphOfConvexSetsTest, RemoveVertex) {
 //       // Without the convex relaxation, the solver should ignore the
 //       // restriction_solver_options and succeed.
 //       options.convex_relaxation = false;
-//       auto successful_result = spp.SolveShortestPath(*source, *target, options);
-//       EXPECT_TRUE(successful_result.is_success());
+//       auto successful_result = spp.SolveShortestPath(*source, *target,
+//       options); EXPECT_TRUE(successful_result.is_success());
 
-//       // Test preprocessing_solver_options by setting the time limit to 0. This
-//       // will cause the preprocessing to fail on every edge, tagging those edges
+//       // Test preprocessing_solver_options by setting the time limit to 0.
+//       This
+//       // will cause the preprocessing to fail on every edge, tagging those
+//       edges
 //       // as unusable, and thus causing the solve to fail.
 //       options.preprocessing = true;
 //       options.convex_relaxation = true;
@@ -2764,11 +2857,12 @@ GTEST_TEST(MultiAgentGraphOfConvexSetsTest, RemoveVertex) {
 //       options.preprocessing_solver_options->SetOption(
 //           solvers::MosekSolver::id(), "MSK_DPAR_OPTIMIZER_MAX_TIME", 0.0);
 
-//       auto failed_result_2 = spp.SolveShortestPath(*source, *target, options);
-//       EXPECT_FALSE(failed_result_2.is_success());
+//       auto failed_result_2 = spp.SolveShortestPath(*source, *target,
+//       options); EXPECT_FALSE(failed_result_2.is_success());
 
 //       // If preprocessing_solver is unspecified, the user-specified solver is
-//       // used. If we use ClarabelSolver, the Mosek option is not applied, so it
+//       // used. If we use ClarabelSolver, the Mosek option is not applied, so
+//       it
 //       // succeeds. If we use MosekSolver, the Mosek option is applied, so it
 //       // fails.
 //       solvers::ClarabelSolver clarabel_solver;
@@ -2779,14 +2873,18 @@ GTEST_TEST(MultiAgentGraphOfConvexSetsTest, RemoveVertex) {
 //       EXPECT_TRUE(successful_result_2.is_success());
 
 //       options.solver = &mosek_solver;
-//       auto failed_result_3 = spp.SolveShortestPath(*source, *target, options);
-//       EXPECT_FALSE(failed_result_3.is_success());
+//       auto failed_result_3 = spp.SolveShortestPath(*source, *target,
+//       options); EXPECT_FALSE(failed_result_3.is_success());
 
-//       // If preprocessing_solver_options is not provided, solver_options is used
+//       // If preprocessing_solver_options is not provided, solver_options is
+//       used
 //       // instead. We can solve the relaxation and convex restriction with
-//       // Clarabel, but use Mosek to solve the preprocessing. We then include the
-//       // time limit 0 option for the Mosek solver in solver_options. This will
-//       // force the preprocessing to remove all edges, thus leading to a failed
+//       // Clarabel, but use Mosek to solve the preprocessing. We then include
+//       the
+//       // time limit 0 option for the Mosek solver in solver_options. This
+//       will
+//       // force the preprocessing to remove all edges, thus leading to a
+//       failed
 //       // solve, hence verifying that solver_options is being used by the
 //       // preprocessing.
 //       options.solver = &clarabel_solver;
@@ -2795,8 +2893,8 @@ GTEST_TEST(MultiAgentGraphOfConvexSetsTest, RemoveVertex) {
 //       options.preprocessing_solver_options = std::nullopt;
 //       options.solver_options.SetOption(solvers::MosekSolver::id(),
 //                                        "MSK_DPAR_OPTIMIZER_MAX_TIME", 0.0);
-//       auto failed_result_4 = spp.SolveShortestPath(*source, *target, options);
-//       EXPECT_FALSE(failed_result_4.is_success());
+//       auto failed_result_4 = spp.SolveShortestPath(*source, *target,
+//       options); EXPECT_FALSE(failed_result_4.is_success());
 
 //       // If we turn off preprocessing, it should succeed again.
 //       options.preprocessing = false;
@@ -2849,7 +2947,8 @@ GTEST_TEST(MultiAgentGraphOfConvexSetsTest, RemoveVertex) {
 //   spp.AddEdge(p3, p1);
 //   spp.AddEdge(p4, p2);
 
-//   // The maximum number of distinct paths without revisits in this graph is 8,
+//   // The maximum number of distinct paths without revisits in this graph is
+//   8,
 //   // hence given enough samples (and high probabilities of traversing all
 //   // edges) we should find all of them.
 //   const int kNumPaths = 8;
@@ -2864,12 +2963,12 @@ GTEST_TEST(MultiAgentGraphOfConvexSetsTest, RemoveVertex) {
 //   auto relaxed_result = spp.SolveShortestPath(*source, *target, options);
 //   ASSERT_TRUE(relaxed_result.is_success());
 
-//   // Set a high number of rounding trials so we find at least kNumPaths paths.
-//   options.max_rounded_paths = kNumPaths;
-//   options.max_rounding_trials = 100;
+//   // Set a high number of rounding trials so we find at least kNumPaths
+//   paths. options.max_rounded_paths = kNumPaths; options.max_rounding_trials =
+//   100;
 
-//   // Set all the flow variables to 0.5 so we will sample multiple random paths.
-//   for (const auto& e : spp.Edges()) {
+//   // Set all the flow variables to 0.5 so we will sample multiple random
+//   paths. for (const auto& e : spp.Edges()) {
 //     relaxed_result.SetSolution(e->phi(), 0.5);
 //   }
 
@@ -2920,8 +3019,8 @@ GTEST_TEST(MultiAgentGraphOfConvexSetsTest, RemoveVertex) {
 //   flows_subset.emplace(e_s1, 0.5);
 //   flows_subset.emplace(e_13, 0.5);
 //   flows_subset.emplace(e_3t, 0.5);
-//   // Because all other flows are assumed 0, there should only be one found path.
-//   auto paths_from_flows_subset =
+//   // Because all other flows are assumed 0, there should only be one found
+//   path. auto paths_from_flows_subset =
 //       spp.SamplePaths(*source, *target, flows_subset, options);
 //   check_paths(paths_from_flows_subset, source, target, 1);
 
@@ -2931,7 +3030,8 @@ GTEST_TEST(MultiAgentGraphOfConvexSetsTest, RemoveVertex) {
 //     relaxed_result.SetSolution(e->phi(), 0.0);
 //   }
 
-//   auto paths_empty = spp.SamplePaths(*source, *target, relaxed_result, options);
+//   auto paths_empty = spp.SamplePaths(*source, *target, relaxed_result,
+//   options);
 //   // There should be no candidate paths.
 //   ASSERT_EQ(paths_empty.size(), 0);
 // }
@@ -2969,7 +3069,8 @@ GTEST_TEST(MultiAgentGraphOfConvexSetsTest, RemoveVertex) {
 
 // GTEST_TEST(ShortestPathTest, InaccurateRelaxationSolve) {
 //   // If the convex relaxation is solved inaccurately, infeasibility may go
-//   // undetected. Previously, this could lead the randomized rounding process to
+//   // undetected. Previously, this could lead the randomized rounding process
+//   to
 //   // fail quietly, eventually leading to a segmentation fault or other memory
 //   // error.
 //   Point p1(Vector1d(0.0));
@@ -2999,9 +3100,11 @@ GTEST_TEST(MultiAgentGraphOfConvexSetsTest, RemoveVertex) {
 // }
 
 // // In some cases, the depth first search performed in rounding will lead to a
-// // dead end. This test confirms that the search can backtrack to explore a new
+// // dead end. This test confirms that the search can backtrack to explore a
+// new
 // // branch. Note that this test is only effective when Mosek or Gurobi is
-// // enabled. Otherwise, the failure mode that required backtracking in the depth
+// // enabled. Otherwise, the failure mode that required backtracking in the
+// depth
 // // first search is not triggered.
 // GTEST_TEST(ShortestPathTest, RoundingBacktrack) {
 //   GraphOfConvexSets spp;
@@ -3011,16 +3114,20 @@ GTEST_TEST(MultiAgentGraphOfConvexSetsTest, RemoveVertex) {
 
 //   Vector3d b(3, 3, -1);
 //   Vertex* v0 = spp.AddVertex(
-//       HPolyhedron((Matrix<double, 3, 2>() << -1, 0, 0, -1, 1, 1).finished(), b)
+//       HPolyhedron((Matrix<double, 3, 2>() << -1, 0, 0, -1, 1, 1).finished(),
+//       b)
 //           .CartesianPower(2));
 //   Vertex* v1 = spp.AddVertex(
-//       HPolyhedron((Matrix<double, 3, 2>() << 1, 0, 0, -1, -1, 1).finished(), b)
+//       HPolyhedron((Matrix<double, 3, 2>() << 1, 0, 0, -1, -1, 1).finished(),
+//       b)
 //           .CartesianPower(2));
 //   Vertex* v2 = spp.AddVertex(
-//       HPolyhedron((Matrix<double, 3, 2>() << -1, 0, 0, 1, 1, -1).finished(), b)
+//       HPolyhedron((Matrix<double, 3, 2>() << -1, 0, 0, 1, 1, -1).finished(),
+//       b)
 //           .CartesianPower(2));
 //   Vertex* v3 = spp.AddVertex(
-//       HPolyhedron((Matrix<double, 3, 2>() << 1, 0, 0, 1, -1, -1).finished(), b)
+//       HPolyhedron((Matrix<double, 3, 2>() << 1, 0, 0, 1, -1, -1).finished(),
+//       b)
 //           .CartesianPower(2));
 
 //   std::vector<Edge*> source_edges;
@@ -3052,15 +3159,16 @@ GTEST_TEST(MultiAgentGraphOfConvexSetsTest, RemoveVertex) {
 //   }
 //   for (Edge* e : source_edges) {
 //     e->AddConstraint(solvers::Binding(continuity_con,
-//                                       {e->xu().tail<2>(), e->xv().head<2>()}));
+//                                       {e->xu().tail<2>(),
+//                                       e->xv().head<2>()}));
 //   }
 //   for (Edge* e : target_edges) {
 //     e->AddConstraint(
 //         solvers::Binding(continuity_con, {e->xu().tail<2>(), e->xv()}));
 //   }
 
-//   auto cost = std::make_shared<solvers::L2NormCost>(A_diff, Vector2d::Zero());
-//   v0->AddCost(solvers::Binding(cost, v0->x()));
+//   auto cost = std::make_shared<solvers::L2NormCost>(A_diff,
+//   Vector2d::Zero()); v0->AddCost(solvers::Binding(cost, v0->x()));
 //   v1->AddCost(solvers::Binding(cost, v1->x()));
 //   v2->AddCost(solvers::Binding(cost, v2->x()));
 //   v3->AddCost(solvers::Binding(cost, v3->x()));
@@ -3207,10 +3315,11 @@ GTEST_TEST(MultiAgentGraphOfConvexSetsTest, RemoveVertex) {
 //   // clang-format on
 //   Vertex* p3 = spp.AddVertex(VPolytope(vertices), "p3");
 //   Vertex* e1 =
-//       spp.AddVertex(Hyperellipsoid(Matrix2d::Identity(), Vector2d(4, 1)), "e1");
+//       spp.AddVertex(Hyperellipsoid(Matrix2d::Identity(), Vector2d(4, 1)),
+//       "e1");
 //   Vertex* e2 = spp.AddVertex(
-//       Hyperellipsoid(Matrix2d(Vector2d(.25, 1).asDiagonal()), Vector2d(7, -2)),
-//       "e2");
+//       Hyperellipsoid(Matrix2d(Vector2d(.25, 1).asDiagonal()), Vector2d(7,
+//       -2)), "e2");
 //   // clang-format off
 //   vertices.resize(2, 3);
 //   vertices <<  5, 7, 6,
@@ -3269,8 +3378,8 @@ GTEST_TEST(MultiAgentGraphOfConvexSetsTest, RemoveVertex) {
 //   const std::forward_list<Vertex*> shortest_path{source, p3, e1,
 //                                                  p4,     p5, target};
 //   for (const auto& e : spp.Edges()) {
-//     auto iter = std::find(shortest_path.begin(), shortest_path.end(), &e->u());
-//     if (iter != shortest_path.end() && &e->v() == *(++iter)) {
+//     auto iter = std::find(shortest_path.begin(), shortest_path.end(),
+//     &e->u()); if (iter != shortest_path.end() && &e->v() == *(++iter)) {
 //       // Then it's on the shortest path; cost should be non-zero.
 //       EXPECT_GE(e->GetSolutionCost(result).value(), 1.0);
 //     } else {
@@ -3279,11 +3388,12 @@ GTEST_TEST(MultiAgentGraphOfConvexSetsTest, RemoveVertex) {
 //   }
 
 //   // Test that solving with the known shortest path returns the same results.
-//   std::vector<const Edge*> path = spp.GetSolutionPath(*source, *target, result);
-//   auto active_edges_result = spp.SolveConvexRestriction(path, options);
-//   ASSERT_TRUE(active_edges_result.is_success());
+//   std::vector<const Edge*> path = spp.GetSolutionPath(*source, *target,
+//   result); auto active_edges_result = spp.SolveConvexRestriction(path,
+//   options); ASSERT_TRUE(active_edges_result.is_success());
 //   // The optimal costs should match.
-//   EXPECT_NEAR(result.get_optimal_cost(), active_edges_result.get_optimal_cost(),
+//   EXPECT_NEAR(result.get_optimal_cost(),
+//   active_edges_result.get_optimal_cost(),
 //               3e-5);
 //   // The vertex solutions should match on the shortest path.
 //   EXPECT_TRUE(CompareMatrices(result.GetSolution(source->x()),
@@ -3302,9 +3412,10 @@ GTEST_TEST(MultiAgentGraphOfConvexSetsTest, RemoveVertex) {
 //     auto new_result = spp.SolveShortestPath(*source, *target, options);
 //     ASSERT_TRUE(new_result.is_success());
 
-//     const std::forward_list<Vertex*> new_shortest_path{source, p2, e2, target};
-//     for (const auto& e : spp.Edges()) {
-//       auto iter = std::find(new_shortest_path.begin(), new_shortest_path.end(),
+//     const std::forward_list<Vertex*> new_shortest_path{source, p2, e2,
+//     target}; for (const auto& e : spp.Edges()) {
+//       auto iter = std::find(new_shortest_path.begin(),
+//       new_shortest_path.end(),
 //                             &e->u());
 //       // All costs should be non-negative.
 //       EXPECT_GT(e->GetSolutionCost(new_result), -1e-6);
@@ -3329,7 +3440,8 @@ GTEST_TEST(MultiAgentGraphOfConvexSetsTest, RemoveVertex) {
 //     const std::forward_list<Vertex*> new_shortest_path{source, p1, e2,
 //                                                        e1,     p5, target};
 //     for (const auto& e : spp.Edges()) {
-//       auto iter = std::find(new_shortest_path.begin(), new_shortest_path.end(),
+//       auto iter = std::find(new_shortest_path.begin(),
+//       new_shortest_path.end(),
 //                             &e->u());
 //       // All costs should be non-negative (to within optimizer tolerance).
 //       EXPECT_GT(e->GetSolutionCost(new_result), -1e-6);
@@ -3345,7 +3457,8 @@ GTEST_TEST(MultiAgentGraphOfConvexSetsTest, RemoveVertex) {
 // }
 
 // // Section 11.4.1 (and the corresponding Figure 9) from the original Graph Of
-// // Convex Sets paper (https://arxiv.org/abs/2101.11565) gives an instance where
+// // Convex Sets paper (https://arxiv.org/abs/2101.11565) gives an instance
+// where
 // // the convex relaxation is loose.
 // GTEST_TEST(ShortestPathTest, Figure9) {
 //   GraphOfConvexSets spp;
@@ -3386,9 +3499,11 @@ GTEST_TEST(MultiAgentGraphOfConvexSetsTest, RemoveVertex) {
 //   EXPECT_NEAR(result.GetSolution(e34->phi()), 1.0, kTol);
 
 //   EXPECT_TRUE(
-//       CompareMatrices(v1->GetSolution(result).value(), Vector2d(0, 2), kTol));
+//       CompareMatrices(v1->GetSolution(result).value(), Vector2d(0, 2),
+//       kTol));
 //   EXPECT_TRUE(
-//       CompareMatrices(v2->GetSolution(result).value(), Vector2d(0, -2), kTol));
+//       CompareMatrices(v2->GetSolution(result).value(), Vector2d(0, -2),
+//       kTol));
 //   EXPECT_TRUE(v3->GetSolution(result).value()[0] > 2.0 - kTol);
 //   EXPECT_TRUE(v3->GetSolution(result).value()[0] < 4.0 - kTol);
 //   EXPECT_NEAR(v3->GetSolution(result).value()[1], 0, kTol);
@@ -3396,7 +3511,8 @@ GTEST_TEST(MultiAgentGraphOfConvexSetsTest, RemoveVertex) {
 //   // Test that rounding returns the convex relaxation when relaxation is
 //   // feasible but integer solution is not.
 //   //
-//   // CSDP crashes when fed an infeasible problem so don't test behaviour under
+//   // CSDP crashes when fed an infeasible problem so don't test behaviour
+//   under
 //   // CSDP when problem is not integer feasible.
 //   if (!MixedIntegerSolverAvailable()) {
 //     return;
@@ -3431,7 +3547,8 @@ GTEST_TEST(MultiAgentGraphOfConvexSetsTest, RemoveVertex) {
 //   auto add_edge_and_constraints = [](GraphOfConvexSets* gcs, Vertex* v_left,
 //                                      Vertex* v_right) {
 //     Edge* edge =
-//         gcs->AddEdge(v_left, v_right, v_left->name() + "-" + v_right->name());
+//         gcs->AddEdge(v_left, v_right, v_left->name() + "-" +
+//         v_right->name());
 //     // Second point of left vertex is equal to first point of right vertex.
 //     edge->AddConstraint(edge->xu().tail<2>() == edge->xv().head<2>());
 //     return edge;
@@ -3439,7 +3556,8 @@ GTEST_TEST(MultiAgentGraphOfConvexSetsTest, RemoveVertex) {
 
 //   auto add_quadratic_cost_between_consecutive_points = [](Vertex* v) {
 //     auto x = v->x();
-//     v->AddCost((x[2] - x[0]) * (x[2] - x[0]) + (x[3] - x[1]) * (x[3] - x[1]));
+//     v->AddCost((x[2] - x[0]) * (x[2] - x[0]) + (x[3] - x[1]) * (x[3] -
+//     x[1]));
 //   };
 
 //   // Construct a GCS.
@@ -3450,7 +3568,8 @@ GTEST_TEST(MultiAgentGraphOfConvexSetsTest, RemoveVertex) {
 //   Vertex* target = gcs.AddVertex(Point(Vector2d{3, 0}), "target");
 
 //   Vertex* v_left = gcs.AddVertex(
-//       HPolyhedron::MakeBox(Vector4d{0, 0, 0, 0}, Vector4d{2, 6, 2, 6}), "left");
+//       HPolyhedron::MakeBox(Vector4d{0, 0, 0, 0}, Vector4d{2, 6, 2, 6}),
+//       "left");
 //   Vertex* v_above = gcs.AddVertex(
 //       HPolyhedron::MakeBox(Vector4d{0, 4, 0, 4}, Vector4d{6, 6, 6, 6}),
 //       "above");
@@ -3487,7 +3606,8 @@ GTEST_TEST(MultiAgentGraphOfConvexSetsTest, RemoveVertex) {
 //     if (e->name().find("start") == std::string::npos &&
 //         e->name().find("target") == std::string::npos) {
 //       // The flows are split, so recovering the solution via e->xu() does not
-//       // return the expected result (it looks like the equality constraint was
+//       // return the expected result (it looks like the equality constraint
+//       was
 //       // not enforced).
 //       EXPECT_FALSE(CompareMatrices(result.GetSolution(e->xu()).tail<2>(),
 //                                    result.GetSolution(e->xv()).head<2>(),
@@ -3529,7 +3649,8 @@ GTEST_TEST(MultiAgentGraphOfConvexSetsTest, RemoveVertex) {
 //   edge->AddCost(1.23);
 //   auto other = g.AddVertex(Point(Vector1d{4.0}), "other");
 //   g.AddEdge(source, other, "source_to_other")->AddCost(3.45);
-//   g.AddEdge(other, target, "other_to_target");  // No cost from other to target.
+//   g.AddEdge(other, target, "other_to_target");  // No cost from other to
+//   target.
 
 //   GraphOfConvexSetsOptions options;
 //   options.preprocessing = true;
