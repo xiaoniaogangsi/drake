@@ -1505,8 +1505,9 @@ void DefineGraphOfConvexSetsAndRelated(py::module m) {
             cls_doc.SamplePathsForAgent.doc_result)
         .def("SolveConvexRestrictionForAgent",
             &MultiAgentGraphOfConvexSets::SolveConvexRestrictionForAgent, 
+            py::arg("agent_id"), 
+            py::arg("n_agents"),
             py::arg("active_edges"),
-            py::arg("agent_id"), py::arg("n_agents"),
             py::arg("options") = GraphOfConvexSetsOptions(),
             py::arg("initial_guess") = nullptr,
             cls_doc.SolveConvexRestrictionForAgent.doc);

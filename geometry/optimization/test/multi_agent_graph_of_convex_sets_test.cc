@@ -792,77 +792,92 @@ TEST_F(TwoPoints, AddConstraint) {
                               ".*IsSubsetOf.*");
 }
 
-// // Verifies that the correct solver is used for the MIP, relaxation,
-// // preprocessing, and restriction.
-// TEST_F(TwoPoints, ReportCorrectSolverId) {
-//   e_->AddCost((e_->xv().head<2>() - e_->xu()).squaredNorm());
-//   GraphOfConvexSetsOptions options;
-//   // Define a different solver for the restriction.
-//   solvers::ClarabelSolver clarabel;
-//   options.solver = &clarabel;
-//   solvers::ClpSolver clp;
-//   options.restriction_solver = &clp;
-//   options.convex_relaxation = true;
-//   options.preprocessing = false;
+// Verifies that the correct solver is used for the MIP, relaxation,
+// preprocessing, and restriction.
+TEST_F(TwoPoints, ReportCorrectSolverId) {
+  auto v0 = e_->xv().head<2>(); // Returns VectorX<symbolic::Variable>&
+  auto u0 = e_->xu().head<2>();
+  auto v1 = e_->xv().segment<2>(3); // Segment of length 2 start at idx 3
+  auto u1 = e_->xu().tail<2>();
+  e_->AddCostForAgent(0, (v0 - u0).squaredNorm());
+  e_->AddCostForAgent(1, (v1 - u1).squaredNorm());
+  GraphOfConvexSetsOptions options;
+  // Define a different solver for the restriction.
+  solvers::ClarabelSolver clarabel;
+  options.solver = &clarabel;
+  solvers::ClpSolver clp;
+  options.restriction_solver = &clp;
+  options.convex_relaxation = true;
+  options.preprocessing = false;
 
-//   // When solving the convex relaxation with no rounded paths, we expect the
-//   // options.solver to be used.
-//   options.max_rounded_paths = 0;
-//   auto result = g_.SolveShortestPath(*u_, *v_, options);
-//   EXPECT_TRUE(result.is_success());
-//   EXPECT_EQ(result.get_solver_id(), options.solver->solver_id());
+  // When solving the convex relaxation with no rounded paths, we expect the
+  // options.solver to be used.
+  options.max_rounded_paths = 0;
+  std::vector<Vertex*> sources = {u_, u_};
+  std::vector<Vertex*> targets = {v_, v_};
+  std::cout << "Checkpoint 1" << std::endl;
+  auto result = g_.SolveShortestPathForMultiAgent(sources, targets, 2, options);
+  std::cout << "Checkpoint 2" << std::endl;
+  EXPECT_TRUE(result.is_success());
+  EXPECT_EQ(result.get_solver_id(), options.solver->solver_id());
 
-//   // The convex restriction should use the restriction solver.
-//   result = g_.SolveConvexRestriction({e_}, options);
-//   EXPECT_TRUE(result.is_success());
-//   EXPECT_EQ(result.get_solver_id(), options.restriction_solver->solver_id());
+  // The convex restriction should use the restriction solver.
+  std::cout << "Checkpoint 3" << std::endl;
+  result = g_.SolveConvexRestrictionForAgent(0, 2, {e_}, options);
+  std::cout << "Checkpoint 4" << std::endl;
+  EXPECT_TRUE(result.is_success());
+  EXPECT_EQ(result.get_solver_id(), options.restriction_solver->solver_id());
+  result = g_.SolveConvexRestrictionForAgent(1, 2, {e_}, options);
+  EXPECT_TRUE(result.is_success());
+  EXPECT_EQ(result.get_solver_id(), options.restriction_solver->solver_id());
 
-//   // With the rounding on, the reported solver should be the restriction
-//   solver options.max_rounded_paths = 1; result = g_.SolveShortestPath(*u_,
-//   *v_, options); EXPECT_TRUE(result.is_success());
-//   EXPECT_EQ(result.get_solver_id(), options.restriction_solver->solver_id());
+  // With the rounding on, the reported solver should be the restriction
+  // solver 
+  options.max_rounded_paths = 1; 
+  result = g_.SolveShortestPathForMultiAgent(sources, targets, 2, options); 
+  EXPECT_TRUE(result.is_success());
+  EXPECT_EQ(result.get_solver_id(), options.restriction_solver->solver_id());
 
-//   // Even if we add a constraint that makes only the rounding fail, the
-//   // reported solver should still be the restriction solver.
-//   u_->AddConstraint(u_->x()[0] == 0.0, {Transcription::kRestriction});
-//   result = g_.SolveShortestPath(*u_, *v_, options);
-//   EXPECT_FALSE(result.is_success());
-//   EXPECT_EQ(result.get_solver_id(), options.restriction_solver->solver_id());
+  // Even if we add a constraint that makes only the rounding fail, the
+  // reported solver should still be the restriction solver.
+  u_->AddConstraint(u_->x()[0] == 0.0, {Transcription::kRestriction});
+  sources = {u_, u_};
+  result = g_.SolveShortestPathForMultiAgent(sources, targets, 2, options);
+  EXPECT_FALSE(result.is_success());
+  EXPECT_EQ(result.get_solver_id(), options.restriction_solver->solver_id());
 
-//   // Adding infeasible constraints to the relaxation should fail the
-//   relaxation,
-//   // hence solving the restriction will never be reached and the reported
-//   solver
-//   // should be the solver used in the relaxation.
-//   e_->AddConstraint(e_->xv()[0] == 0.0, {Transcription::kRelaxation});
-//   result = g_.SolveShortestPath(*u_, *v_, options);
-//   EXPECT_FALSE(result.is_success());
-//   EXPECT_EQ(result.get_solver_id(), options.solver->solver_id());
+  // Adding infeasible constraints to the relaxation should fail the
+  // relaxation, hence solving the restriction will never be reached
+  // and the reported solver should be the solver used in the 
+  // relaxation.
+  e_->AddConstraintForAgent(0, e_->xv()[0] == 0.0, {Transcription::kRelaxation});
+  e_->AddConstraintForAgent(1, e_->xv()[3] == 0.0, {Transcription::kRelaxation});
+  result = g_.SolveShortestPathForMultiAgent(sources, targets, 2, options);
+  EXPECT_FALSE(result.is_success());
+  EXPECT_EQ(result.get_solver_id(), options.solver->solver_id());
 
-//   // Since we haven't added any infeasible constraints to the MIP
-//   transcription,
-//   // we expect the solve to be successful and the reported solver to be the
-//   MIP
-//   // solver.
-//   if (solvers::MosekSolver::is_available() &&
-//       solvers::MosekSolver::is_enabled()) {
-//     solvers::MosekSolver mosek;
-//     options.solver = &mosek;
-//     options.convex_relaxation = false;
-//     result = g_.SolveShortestPath(*u_, *v_, options);
-//     EXPECT_TRUE(result.is_success());
-//     EXPECT_EQ(result.get_solver_id(), options.solver->solver_id());
-//   }
+  // Since we haven't added any infeasible constraints to the MIP
+  // transcription, we expect the solve to be successful and the
+  // reported solver to be the MIP solver.
+  if (solvers::MosekSolver::is_available() &&
+      solvers::MosekSolver::is_enabled()) {
+    solvers::MosekSolver mosek;
+    options.solver = &mosek;
+    options.convex_relaxation = false;
+    result = g_.SolveShortestPathForMultiAgent(sources, targets, 2, options);
+    EXPECT_TRUE(result.is_success());
+    EXPECT_EQ(result.get_solver_id(), options.solver->solver_id());
+  }
 
-//   // Test the preprocessing solver. Since the results of these solves are not
-//   // reported, we call the OSQP solver and expect an error -- this solver
-//   cannot
-//   // handle LPs, the preprocessing problems are LPs.
-//   solvers::OsqpSolver osqp;
-//   options.preprocessing = true;
-//   options.preprocessing_solver = &osqp;
-//   EXPECT_THROW(g_.SolveShortestPath(*u_, *v_, options), std::exception);
-// }
+  // Test the preprocessing solver. Since the results of these solvers are not
+  // reported, we call the OSQP solver and expect an error -- this solver
+  // cannot handle LPs, the preprocessing problems are LPs.
+  solvers::OsqpSolver osqp;
+  options.preprocessing = true;
+  options.preprocessing_solver = &osqp;
+  EXPECT_THROW(g_.SolveShortestPathForMultiAgent(
+    sources, targets, 2, options), std::exception);
+}
 
 // // Verify that assigning a transcription to a cost adds it to the correct
 // // problem.

@@ -919,8 +919,9 @@ class MultiAgentGraphOfConvexSets {
   n_agents.
   */
   solvers::MathematicalProgramResult SolveConvexRestrictionForAgent(
-      const std::vector<const Edge*>& active_edges, const int agent_id,
+      const int agent_id,
       const int n_agents,
+      const std::vector<const Edge*>& active_edges, 
       const GraphOfConvexSetsOptions& options = GraphOfConvexSetsOptions(),
       const solvers::MathematicalProgramResult* initial_guess = nullptr) const;
 

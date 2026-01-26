@@ -13,6 +13,7 @@
 #include <vector>
 
 #include <fmt/format.h>
+#include <iostream> // For debugging.
 
 #include "drake/common/parallelism.h"
 #include "drake/common/text_logging.h"
@@ -333,10 +334,12 @@ Edge::Edge(const EdgeId& id, Vertex* u, Vertex* v, std::string name,
     // x_to_yz_ is an unordered map with ux or vx as keys and y or z as values.
     agent.x_to_yz_.reserve(agent.y_.size() + agent.z_.size());
     for (int i = 0; i < u_->ambient_dimension(); ++i) {
-      agent.x_to_yz_.emplace(u_->x()[i], agent.y_[i]);
+      // NOTE: the index of u_->x() should consider a, since Vertex is multi-agent now.
+      agent.x_to_yz_.emplace(u_->x()[a * u_->ambient_dimension() + i], agent.y_[i]);
     }
     for (int i = 0; i < v_->ambient_dimension(); ++i) {
-      agent.x_to_yz_.emplace(v_->x()[i], agent.z_[i]);
+      // NOTE: the index of v_->x() should consider a, since Vertex is multi-agent now.
+      agent.x_to_yz_.emplace(v_->x()[a * v_->ambient_dimension() + i], agent.z_[i]);
     }
     // Maintain a vector of allowed vars for each agent separately  //Added
     agent.allowed_vars_per_agent_.insert(Variables(u_->x()));
@@ -679,6 +682,11 @@ Vertex* MultiAgentGraphOfConvexSets::AddVertex(const ConvexSet& set,
 
 namespace {
 
+// ReplaceVariables is used in AddVertexFromTemplate and AddEdgeFromTemplate,
+// in order to substitute variable mappings when cloning the graph structures.
+// `bindings` is a vector constitutes of bindings of constriants/costs and their
+// transcription methods; `subs` is a mapping from old variable IDs to new
+// variables.
 template <typename C>
 std::vector<std::pair<solvers::Binding<C>, std::unordered_set<Transcription>>>
 ReplaceVariables(
@@ -771,6 +779,7 @@ Edge* MultiAgentGraphOfConvexSets::AddEdgeFromTemplate(Vertex* u, Vertex* v,
   Edge* e_new = AddEdge(u, v, e.name(), e.n_agents());
   DRAKE_DEMAND(e_new->n_agents_ == e.n_agents_);
 
+  // Agent-level substitution (for Edge) 
   for (int a = 0; a < e.n_agents_; ++a) {
     const auto& ea = e.agents_[a];
     auto& ea_new = e_new->agents_[a];
@@ -783,12 +792,13 @@ Edge* MultiAgentGraphOfConvexSets::AddEdgeFromTemplate(Vertex* u, Vertex* v,
     for (int i = 0; i < ssize(ea.ell_); ++i) {
       subs.emplace(ea.ell_[i].get_id(), ea_new.ell_[i]);
     }
+    // Agent-level x to yz (variable replacement for y/z based on xu/xv)
     for (int i = 0; i < ssize(e.xu()); ++i) {
-      subs.emplace(e.xu()[i].get_id(), e_new->xu()[i]);
-    }
+      subs.emplace(e.xu()[i].get_id(), ea_new.y_[i]);
+    }   // ERROR: origin value: e_new->xu()[i]
     for (int i = 0; i < ssize(e.xv()); ++i) {
-      subs.emplace(e.xv()[i].get_id(), e_new->xv()[i]);
-    }
+      subs.emplace(e.xv()[i].get_id(), ea_new.z_[i]);
+    }   // ERROR: origin value: e_new->xv()[i]
     if (ea.slacks_.size() > 0) {
       // Slacks get created and inserted into the other variable lists in a way
       // that's slightly annoying to deal with. We can add this once it's
@@ -1826,6 +1836,11 @@ MultiAgentGraphOfConvexSets::SolveShortestPathForMultiAgent(
           for (int j = 0; j < old_vars.size(); ++j) {
             vars[j + 2] = ea.x_to_yz_.at(old_vars[j]);
           }
+          // // DEBUG: show x_to_yz_:
+          // std::cout << "Edge " << edge_id << " Agent " << a << " has x_to_yz: " << std::endl;
+          // for (auto [key, value] : ea.x_to_yz_) {
+          //   std::cout << "  " << key << ": " << value << std::endl;
+          // }
 
           AddPerspectiveCost(&prog, b, vars);
         }
@@ -2815,8 +2830,9 @@ void MultiAgentGraphOfConvexSets::
 // Multi-agent case, for a particular agent `agent_id`
 MathematicalProgramResult
 MultiAgentGraphOfConvexSets::SolveConvexRestrictionForAgent(
-    const std::vector<const Edge*>& active_edges, const int agent_id,
-    const int n_agents, const GraphOfConvexSetsOptions& options,
+    const int agent_id, const int n_agents, 
+    const std::vector<const Edge*>& active_edges, 
+    const GraphOfConvexSetsOptions& options,
     const MathematicalProgramResult* initial_guess) const {
   // Construct agent-specific restriction program
   std::unique_ptr<MathematicalProgram> prog =
