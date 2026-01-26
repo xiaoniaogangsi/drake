@@ -485,7 +485,8 @@ class MultiAgentGraphOfConvexSets {
      * at once*/
     void ClearPhiConstraintsForAllAgents();
 
-    /** Returns costs on this edge. (The union of costs for all agents)
+    /** Returns costs on this edge. (The union of costs for all agents), 
+    note that the order of the bindings in the returned vector is sorted by agents.
     @param used_in_transcription specifies the components of the problem from
     which the constraint should be retrieved.
     @throws std::exception if no transcription is specified.
@@ -508,7 +509,8 @@ class MultiAgentGraphOfConvexSets {
             Transcription::kRestriction}) const;
 
     /** Returns constraints on this edge. (The union of constraints for all
-    agnets)
+    agnets), note that the order of the bindings in the returned vector is 
+    sorted by agents.
     @param used_in_transcription specifies the components of the problem from
     which the constraint should be retrieved.
     @throws std::exception if no transcription is specified.

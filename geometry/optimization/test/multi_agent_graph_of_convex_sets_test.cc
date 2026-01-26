@@ -442,131 +442,355 @@ TEST_F(TwoPoints, Basic) {
   EXPECT_EQ(g_.Edges().at(0), e_);
 }
 
-// // Confirms that we can add costs (both ways) and get the solution.
-// // The correctness of the added costs will be established by the solution
-// tests. TEST_F(TwoPoints, AddCost) {
-//   auto b0 = e_->AddCost((e_->xv().head<2>() - e_->xu()).squaredNorm());
-//   auto cost = std::make_shared<LinearCost>(Vector2d::Zero(), 0.1);
-//   auto b1 = e_->AddCost(Binding(cost, e_->xu()));
-//   auto v_b0 = v_->AddCost((v_->x() + Vector3d::Ones()).squaredNorm());
-//   auto v_b1 = v_->AddCost(Binding(cost, v_->x().head<2>()));
+// // ============================================================================
+// // Multi-Agent Specific Tests
+// // ============================================================================
 
-//   // Confirm that they are down-castable.
-//   auto quadratic = dynamic_cast<QuadraticCost*>(b0.evaluator().get());
-//   EXPECT_TRUE(quadratic != nullptr);
-//   auto linear = dynamic_cast<LinearCost*>(b1.evaluator().get());
-//   EXPECT_TRUE(linear != nullptr);
-//   quadratic = dynamic_cast<QuadraticCost*>(v_b0.evaluator().get());
-//   EXPECT_TRUE(quadratic != nullptr);
-//   linear = dynamic_cast<LinearCost*>(v_b1.evaluator().get());
-//   EXPECT_TRUE(linear != nullptr);
-
-//   // Confirm that they are all accessible.
-//   const auto& edge_costs = e_->GetCosts();
-//   EXPECT_EQ(edge_costs[0], b0);
-//   EXPECT_EQ(edge_costs[1], b1);
-//   const auto& vertex_costs = v_->GetCosts();
-//   EXPECT_EQ(vertex_costs[0], v_b0);
-//   EXPECT_EQ(vertex_costs[1], v_b1);
-
-//   symbolic::Variable other_var("x");
-//   DRAKE_EXPECT_THROWS_MESSAGE(e_->AddCost(other_var), ".*IsSubsetOf.*");
-//   DRAKE_EXPECT_THROWS_MESSAGE(v_->AddCost(other_var), ".*IsSubsetOf.*");
-
-//   // If no transcription is specified, the constraint won't be added.
-//   EXPECT_THROW(e_->AddCost((e_->xv().head<2>() - e_->xu()).squaredNorm(),
-//   {}),
-//                std::exception);
-//   EXPECT_THROW(e_->AddCost(Binding(cost, e_->xu()), {}), std::exception);
-//   EXPECT_THROW(u_->AddCost((v_->x() + Vector3d::Ones()).squaredNorm(), {}),
-//                std::exception);
-//   EXPECT_THROW(u_->AddCost(Binding(cost, u_->x()), {}), std::exception);
-
-//   // By default Edge::AddCost or Vertex::AddCost is adding the binding to all
-//   // transcriptions.
-//   for (const auto& transcription :
-//        {Transcription::kMIP, Transcription::kRelaxation,
-//         Transcription::kRestriction}) {
-//     const auto transcription_edge_costs = e_->GetCosts({transcription});
-//     EXPECT_EQ(transcription_edge_costs.size(), 2);
-//     EXPECT_EQ(transcription_edge_costs[0], b0);
-//     EXPECT_EQ(transcription_edge_costs[1], b1);
-//     const auto transcription_vertex_costs = v_->GetCosts({transcription});
-//     EXPECT_EQ(transcription_vertex_costs.size(), 2);
-//     EXPECT_EQ(transcription_vertex_costs[0], v_b0);
-//     EXPECT_EQ(transcription_vertex_costs[1], v_b1);
+// // Test fixture for multi-agent tests with simple 2-agent scenarios
+// class MultiAgentTwoAgents : public MultiAgentGraphOfConvexSetsTestFixture {
+//  protected:
+//   void SetUp() override {
+//     SetUpBasicMultiAgentGraph(2);
 //   }
-//   // If no transcription is specified, nothing will be returned.
-//   EXPECT_THROW(e_->GetCosts({}), std::exception);
-//   EXPECT_THROW(v_->GetCosts({}), std::exception);
+
+//   MathematicalProgramResult DoSolveConvexRestriction() const override {
+//     // For multi-agent case, we'll test with agent 0
+//     DRAKE_DEMAND(!source_.empty() && !target_.empty());
+//     return g_.SolveConvexRestrictionForAgent({}, 0, 2);
+//   }
+// };
+
+// // Test that we can create vertices with multiple agents
+// TEST_F(MultiAgentTwoAgents, VertexCreation) {
+//   EXPECT_EQ(n_agents_, 2);
+//   EXPECT_EQ(source_.size(), 2);
+//   EXPECT_EQ(target_.size(), 2);
+  
+//   // Each vertex should have placeholder_x with size n_agents * ambient_dimension
+//   for (const auto* v : source_) {
+//     EXPECT_GT(v->x().size(), 0);
+//   }
+  
+//   for (const auto* v : target_) {
+//     EXPECT_GT(v->x().size(), 0);
+//   }
 // }
 
-// // Confirms that we can add constraints (both ways).
-// // The correctness of the added constraints will be established by the
-// solution
-// // tests.
-// TEST_F(TwoPoints, AddConstraint) {
-//   auto b0 = e_->AddConstraint(e_->xv().head<2>() == e_->xu());
-//   auto constraint = std::make_shared<LinearConstraint>(
-//       Matrix2d::Identity(), Vector2d::Zero(), Vector2d{1.2, 3.4});
-//   auto b1 = e_->AddConstraint(Binding(constraint, e_->xu()));
-//   auto u_b0 = u_->AddConstraint(u_->x() == pu_.x());
-//   auto u_b1 = u_->AddConstraint(Binding(constraint, u_->x()));
-//   // If no transcription is specified, the constraint won't be added.
-//   EXPECT_THROW(e_->AddConstraint(e_->xv().head<2>() == e_->xu(), {}),
-//                std::exception);
-//   EXPECT_THROW(e_->AddConstraint(Binding(constraint, e_->xu()), {}),
-//                std::exception);
-//   EXPECT_THROW(u_->AddConstraint(u_->x() == pu_.x(), {}), std::exception);
-//   EXPECT_THROW(u_->AddConstraint(Binding(constraint, u_->x()), {}),
-//                std::exception);
-
-//   // Confirm that they are down-castable.
-//   auto linear_equality =
-//       dynamic_cast<LinearEqualityConstraint*>(b0.evaluator().get());
-//   EXPECT_TRUE(linear_equality != nullptr);
-//   auto linear = dynamic_cast<LinearConstraint*>(b1.evaluator().get());
-//   EXPECT_TRUE(linear != nullptr);
-//   linear_equality =
-//       dynamic_cast<LinearEqualityConstraint*>(u_b0.evaluator().get());
-//   EXPECT_TRUE(linear_equality != nullptr);
-//   linear = dynamic_cast<LinearConstraint*>(u_b1.evaluator().get());
-//   EXPECT_TRUE(linear != nullptr);
-
-//   // Confirm that they are all accessible.
-//   const auto& all_edge_constraints = e_->GetConstraints();
-//   EXPECT_EQ(all_edge_constraints.size(), 2);
-//   EXPECT_EQ(all_edge_constraints[0], b0);
-//   EXPECT_EQ(all_edge_constraints[1], b1);
-//   const auto& all_vertex_constraints = u_->GetConstraints();
-//   EXPECT_EQ(all_vertex_constraints.size(), 2);
-//   EXPECT_EQ(all_vertex_constraints[0], u_b0);
-//   EXPECT_EQ(all_vertex_constraints[1], u_b1);
-
-//   // By default Edge::AddConstraint or Vertex::AddConstraint is adding the
-//   // binding to all transcriptions.
-//   for (const auto& transcription :
-//        {Transcription::kMIP, Transcription::kRelaxation,
-//         Transcription::kRestriction}) {
-//     const auto edge_constraints = e_->GetConstraints({transcription});
-//     EXPECT_EQ(edge_constraints.size(), 2);
-//     EXPECT_EQ(edge_constraints[0], b0);
-//     EXPECT_EQ(edge_constraints[1], b1);
-//     const auto vertex_constraints = u_->GetConstraints({transcription});
-//     EXPECT_EQ(vertex_constraints.size(), 2);
-//     EXPECT_EQ(vertex_constraints[0], u_b0);
-//     EXPECT_EQ(vertex_constraints[1], u_b1);
+// // Test that we can access variables for specific agents using x_at()
+// TEST_F(MultiAgentTwoAgents, VertexAgentVariableAccess) {
+//   // Test x_at() method for accessing agent-specific variables
+//   for (int agent = 0; agent < n_agents_; ++agent) {
+//     for (int idx = 0; idx < source_[agent]->set().ambient_dimension(); ++idx) {
+//       const auto& var = source_[agent]->x_at(agent, idx);
+//       EXPECT_TRUE(var.is_constant() == false);  // Should be a variable
+//     }
 //   }
-//   // If no transcription is specified, nothing will be returned.
-//   EXPECT_THROW(e_->GetConstraints({}), std::exception);
-//   EXPECT_THROW(u_->GetConstraints({}), std::exception);
-
-//   symbolic::Variable other_var("x");
-//   DRAKE_EXPECT_THROWS_MESSAGE(e_->AddConstraint(other_var == 1),
-//                               ".*IsSubsetOf.*");
-//   DRAKE_EXPECT_THROWS_MESSAGE(u_->AddConstraint(other_var == 1),
-//                               ".*IsSubsetOf.*");
 // }
+
+// // Test multi-agent shortest path solving with convex relaxation
+// TEST_F(MultiAgentTwoAgents, SolveShortestPathMultiAgent) {
+//   EXPECT_EQ(n_agents_, 2);
+  
+//   // Add simple costs to each source vertex
+//   for (int a = 0; a < n_agents_; ++a) {
+//     source_[a]->AddCost(source_[a]->x().squaredNorm());
+//   }
+  
+//   GraphOfConvexSetsOptions options;
+//   options.convex_relaxation = true;
+//   options.max_rounded_paths = 0;
+//   options.preprocessing = false;
+  
+//   // Solve the shortest path for multiple agents
+//   auto result = g_.SolveShortestPathForMultiAgent(source_, target_, n_agents_, options);
+//   EXPECT_TRUE(result.is_success());
+// }
+
+// // Test that we can get solutions for specific agents
+// TEST_F(MultiAgentTwoAgents, GetSolutionForAgent) {
+//   GraphOfConvexSetsOptions options;
+//   options.convex_relaxation = true;
+//   options.max_rounded_paths = 0;
+//   options.preprocessing = false;
+  
+//   auto result = g_.SolveShortestPathForMultiAgent(source_, target_, n_agents_, options);
+//   if (result.is_success()) {
+//     // Try to get solution path for each agent
+//     for (int agent = 0; agent < n_agents_; ++agent) {
+//       const auto path = g_.GetSolutionPathForAgent(
+//           *source_[agent], *target_[agent], agent, n_agents_, result);
+//       // Path might be empty depending on the solution structure
+//       EXPECT_TRUE(!path.empty() || path.empty());  // Just check it's a valid vector
+//     }
+//   }
+// }
+
+// // Test sampling paths for multiple agents
+// TEST_F(MultiAgentTwoAgents, SamplePathsForAgent) {
+//   GraphOfConvexSetsOptions options;
+//   options.convex_relaxation = true;
+//   options.max_rounded_paths = 1;
+//   options.preprocessing = false;
+  
+//   auto result = g_.SolveShortestPathForMultiAgent(source_, target_, n_agents_, options);
+//   if (result.is_success()) {
+//     for (int agent = 0; agent < n_agents_; ++agent) {
+//       const auto paths = g_.SamplePathsForAgent(
+//           *source_[agent], *target_[agent], agent, result, options);
+//       // Should return at least an empty vector, possibly with multiple paths
+//       EXPECT_TRUE(!paths.empty() || paths.empty());
+//     }
+//   }
+// }
+
+// // Test that we can get graphviz string for specific agents
+// TEST_F(MultiAgentTwoAgents, GetGraphvizStringForAgent) {
+//   GraphOfConvexSetsOptions options;
+//   options.convex_relaxation = true;
+//   options.max_rounded_paths = 0;
+//   options.preprocessing = false;
+  
+//   auto result = g_.SolveShortestPathForMultiAgent(source_, target_, n_agents_, options);
+  
+//   // Get graphviz for each agent
+//   for (int agent = 0; agent < n_agents_; ++agent) {
+//     const std::string graphviz = g_.GetGraphvizStringForAgent(&result, 
+//         GcsGraphvizOptions(), agent);
+//     EXPECT_FALSE(graphviz.empty());
+//     EXPECT_THAT(graphviz, HasSubstr("digraph"));
+//   }
+  
+//   // Also test with agent = -1 (all agents combined)
+//   const std::string graphviz_all = g_.GetGraphvizStringForAgent(&result,
+//       GcsGraphvizOptions(), -1);
+//   EXPECT_FALSE(graphviz_all.empty());
+// }
+
+// // Test adding costs and constraints with agent-specific methods
+// TEST_F(MultiAgentTwoAgents, EdgeAgentSpecificCosts) {
+//   // Create an edge between first source and first target
+//   auto edge = g_.AddEdge(source_[0], target_[0], "test_edge", 1);
+  
+//   // Add costs for specific agent using AddCostForAgent
+//   auto cost_expr = edge->xu().squaredNorm();
+//   auto binding = edge->AddCostForAgent(0, cost_expr);
+//   EXPECT_TRUE(binding.evaluator() != nullptr);
+  
+//   // Verify we can retrieve the costs
+//   const auto costs = edge->GetCostsForAgent(0);
+//   EXPECT_GT(costs.size(), 0);
+// }
+// // ========================================================
+// // ========================================================
+
+// Confirms that we can add costs (both ways) and get the solution.
+// The correctness of the added costs will be established by the solution
+// tests. 
+TEST_F(TwoPoints, AddCost) {
+  auto v0 = e_->xv().head<2>(); // Returns VectorX<symbolic::Variable>&
+  auto u0 = e_->xu().head<2>();
+  auto v1 = e_->xv().segment<2>(3); // Segment of length 2 start at idx 3
+  auto u1 = e_->xu().tail<2>();
+  auto b0_0 = e_->AddCostForAgent(0, (v0 - u0).squaredNorm());
+  auto b0_1 = e_->AddCostForAgent(1, (v1 - u1).squaredNorm());
+  auto cost = std::make_shared<LinearCost>(Vector2d::Zero(), 0.1);  // 0*x+0.1
+  auto b1_0 = e_->AddCostForAgent(0, Binding(cost, u0));
+  auto b1_1 = e_->AddCostForAgent(1, Binding(cost, u1));
+  auto v_b0 = v_->AddCost((v_->x() + Vector6d::Ones()).squaredNorm());
+  auto v_b1_0 = v_->AddCost(Binding(cost, v_->x().head<2>()));
+  auto v_b1_1 = v_->AddCost(Binding(cost, v_->x().segment<2>(3)));
+
+  // Confirm that they are down-castable.
+  auto quadratic0 = dynamic_cast<QuadraticCost*>(b0_0.evaluator().get());
+  EXPECT_TRUE(quadratic0 != nullptr);
+  auto quadratic1 = dynamic_cast<QuadraticCost*>(b0_1.evaluator().get());
+  EXPECT_TRUE(quadratic1 != nullptr);
+  auto linear0 = dynamic_cast<LinearCost*>(b1_0.evaluator().get());
+  EXPECT_TRUE(linear0 != nullptr);
+  auto linear1 = dynamic_cast<LinearCost*>(b1_1.evaluator().get());
+  EXPECT_TRUE(linear1 != nullptr);
+  auto quadratic = dynamic_cast<QuadraticCost*>(v_b0.evaluator().get());
+  EXPECT_TRUE(quadratic != nullptr);
+  linear0 = dynamic_cast<LinearCost*>(v_b1_0.evaluator().get());
+  EXPECT_TRUE(linear0 != nullptr);
+  linear1 = dynamic_cast<LinearCost*>(v_b1_1.evaluator().get());
+  EXPECT_TRUE(linear1 != nullptr);
+
+  // Confirm that they are all accessible.
+  const auto& edge_costs = e_->GetCosts();
+  // edge costs bindings are sorted by agents
+  EXPECT_EQ(edge_costs[0], b0_0);
+  EXPECT_EQ(edge_costs[1], b1_0);
+  EXPECT_EQ(edge_costs[2], b0_1);
+  EXPECT_EQ(edge_costs[3], b1_1);
+  const auto& edge_costs1 = e_->GetCostsForAgent(1);
+  EXPECT_EQ(edge_costs1[0], b0_1);
+  EXPECT_EQ(edge_costs1[1], b1_1);
+  const auto& vertex_costs = v_->GetCosts();
+  EXPECT_EQ(vertex_costs[0], v_b0);
+  EXPECT_EQ(vertex_costs[1], v_b1_0);
+  EXPECT_EQ(vertex_costs[2], v_b1_1);
+
+  symbolic::Variable other_var("x");
+  DRAKE_EXPECT_THROWS_MESSAGE(e_->AddCostForAgent(0, other_var), 
+    ".*IsSubsetOf.*");
+  DRAKE_EXPECT_THROWS_MESSAGE(e_->AddCostForAgent(1, other_var), 
+    ".*IsSubsetOf.*");
+  DRAKE_EXPECT_THROWS_MESSAGE(v_->AddCost(other_var), ".*IsSubsetOf.*");
+
+  // If no transcription is specified, the constraint won't be added.
+  EXPECT_THROW(e_->AddCostForAgent(0, (v0 - u0).squaredNorm(),
+  {}),
+               std::exception);
+  EXPECT_THROW(e_->AddCostForAgent(1, (v1 - u1).squaredNorm(),
+  {}),
+               std::exception);
+  EXPECT_THROW(e_->AddCostForAgent(0, Binding(cost, u0), {}), 
+               std::exception);
+  EXPECT_THROW(e_->AddCostForAgent(1, Binding(cost, u1), {}), 
+               std::exception);
+  EXPECT_THROW(u_->AddCost((v_->x() + Vector6d::Ones()).squaredNorm(), {}),
+               std::exception);
+  EXPECT_THROW(u_->AddCost(Binding(cost, u_->x().head<2>()), {}),
+               std::exception);
+  EXPECT_THROW(u_->AddCost(Binding(cost, u_->x().tail<2>()), {}),
+               std::exception);
+
+  // By default Edge::AddCostForAgent or Vertex::AddCost is adding the binding to all
+  // transcriptions.
+  for (const auto& transcription :
+       {Transcription::kMIP, Transcription::kRelaxation,
+        Transcription::kRestriction}) {
+    const auto transcription_edge_costs = e_->GetCosts({transcription});
+    EXPECT_EQ(transcription_edge_costs.size(), 4);
+    // edge cost bindings are sorted by agents
+    EXPECT_EQ(transcription_edge_costs[0], b0_0);
+    EXPECT_EQ(transcription_edge_costs[1], b1_0);
+    EXPECT_EQ(transcription_edge_costs[2], b0_1);
+    EXPECT_EQ(transcription_edge_costs[3], b1_1);
+    const auto transcription_vertex_costs = v_->GetCosts({transcription});
+    EXPECT_EQ(transcription_vertex_costs.size(), 3);
+    EXPECT_EQ(transcription_vertex_costs[0], v_b0);
+    EXPECT_EQ(transcription_vertex_costs[1], v_b1_0);
+    EXPECT_EQ(transcription_vertex_costs[2], v_b1_1);
+  }
+  // If no transcription is specified, nothing will be returned.
+  EXPECT_THROW(e_->GetCosts({}), std::exception);
+  EXPECT_THROW(v_->GetCosts({}), std::exception);
+}
+
+// Confirms that we can add constraints (both ways).
+// The correctness of the added constraints will be established by the
+// solution tests.
+TEST_F(TwoPoints, AddConstraint) {
+  auto v0 = e_->xv().head<2>(); // Returns VectorX<symbolic::Variable>&
+  auto u0 = e_->xu().head<2>();
+  auto v1 = e_->xv().segment<2>(3); // Segment of length 2 start at idx 3
+  auto u1 = e_->xu().tail<2>();
+  auto b0_0 = e_->AddConstraintForAgent(0, v0 == u0);
+  auto b0_1 = e_->AddConstraintForAgent(1, v1 == u1);
+  auto constraint = std::make_shared<LinearConstraint>(
+      Matrix2d::Identity(), Vector2d::Zero(), Vector2d{1.2, 3.4});
+      //0 <= I*x <= [1.2 3.4]'
+  auto b1_0 = e_->AddConstraintForAgent(0, Binding(constraint, u0));
+  auto b1_1 = e_->AddConstraintForAgent(1, Binding(constraint, u1));
+  auto u_b0_0 = u_->AddConstraint(u_->x().head<2>() == pu_.x());
+  auto u_b0_1 = u_->AddConstraint(u_->x().tail<2>() == pu_.x());
+  auto u_b1_0 = u_->AddConstraint(Binding(constraint, u_->x().head<2>()));
+  auto u_b1_1 = u_->AddConstraint(Binding(constraint, u_->x().tail<2>()));
+  // If no transcription is specified, the constraint won't be added.
+  EXPECT_THROW(e_->AddConstraintForAgent(0, v0 == u0, {}),
+               std::exception);
+  EXPECT_THROW(e_->AddConstraintForAgent(1, v1 == u1, {}),
+               std::exception);
+  EXPECT_THROW(e_->AddConstraintForAgent(0, Binding(constraint, u0), {}),
+               std::exception);
+  EXPECT_THROW(e_->AddConstraintForAgent(1, Binding(constraint, u1), {}),
+               std::exception);
+  EXPECT_THROW(u_->AddConstraint(u_->x().head<2>() == pu_.x(), {}), 
+               std::exception);
+  EXPECT_THROW(u_->AddConstraint(u_->x().tail<2>() == pu_.x(), {}), 
+               std::exception);
+  EXPECT_THROW(u_->AddConstraint(Binding(constraint, u_->x().head<2>()), {}),
+               std::exception);
+  EXPECT_THROW(u_->AddConstraint(Binding(constraint, u_->x().tail<2>()), {}),
+               std::exception);
+
+  // Confirm that they are down-castable.
+  auto linear_equality0 =
+      dynamic_cast<LinearEqualityConstraint*>(b0_0.evaluator().get());
+  EXPECT_TRUE(linear_equality0 != nullptr);
+  auto linear_equality1 =
+      dynamic_cast<LinearEqualityConstraint*>(b0_1.evaluator().get());
+  EXPECT_TRUE(linear_equality1 != nullptr);
+  auto linear0 = dynamic_cast<LinearConstraint*>(b1_0.evaluator().get());
+  EXPECT_TRUE(linear0 != nullptr);
+  auto linear1 = dynamic_cast<LinearConstraint*>(b1_1.evaluator().get());
+  EXPECT_TRUE(linear1 != nullptr);
+  linear_equality0 =
+      dynamic_cast<LinearEqualityConstraint*>(u_b0_0.evaluator().get());
+  EXPECT_TRUE(linear_equality0 != nullptr);
+  linear_equality1 =
+      dynamic_cast<LinearEqualityConstraint*>(u_b0_1.evaluator().get());
+  EXPECT_TRUE(linear_equality1 != nullptr);
+  linear0 = dynamic_cast<LinearConstraint*>(u_b1_0.evaluator().get());
+  EXPECT_TRUE(linear0 != nullptr);
+  linear1 = dynamic_cast<LinearConstraint*>(u_b1_1.evaluator().get());
+  EXPECT_TRUE(linear1 != nullptr);
+
+  // Confirm that they are all accessible.
+  const auto& all_edge_constraints = e_->GetConstraints();
+  EXPECT_EQ(all_edge_constraints.size(), 4);
+  // The edge constraints are sorted by agents
+  EXPECT_EQ(all_edge_constraints[0], b0_0);
+  EXPECT_EQ(all_edge_constraints[1], b1_0);
+  EXPECT_EQ(all_edge_constraints[2], b0_1);
+  EXPECT_EQ(all_edge_constraints[3], b1_1);
+  const auto& edge_constraints_for_agent1 = e_->GetConstraintsForAgent(1);
+  EXPECT_EQ(edge_constraints_for_agent1[0], b0_1);
+  EXPECT_EQ(edge_constraints_for_agent1[1], b1_1);
+  const auto& all_vertex_constraints = u_->GetConstraints();
+  EXPECT_EQ(all_vertex_constraints.size(), 4);
+  // The vertex constraints are ordered just as they are added.
+  EXPECT_EQ(all_vertex_constraints[0], u_b0_0);
+  EXPECT_EQ(all_vertex_constraints[1], u_b0_1);
+  EXPECT_EQ(all_vertex_constraints[2], u_b1_0);
+  EXPECT_EQ(all_vertex_constraints[3], u_b1_1);
+
+  // By default Edge::AddConstraintForAgent or Vertex::AddConstraint
+  // is adding the binding to all transcriptions.
+  for (const auto& transcription :
+       {Transcription::kMIP, Transcription::kRelaxation,
+        Transcription::kRestriction}) {
+    const auto edge_constraints = e_->GetConstraints({transcription});
+    EXPECT_EQ(edge_constraints.size(), 4);
+    // The edge constraints are sorted by agents
+    EXPECT_EQ(edge_constraints[0], b0_0);
+    EXPECT_EQ(edge_constraints[1], b1_0);
+    EXPECT_EQ(edge_constraints[2], b0_1);
+    EXPECT_EQ(edge_constraints[3], b1_1);
+    const auto vertex_constraints = u_->GetConstraints({transcription});
+    EXPECT_EQ(vertex_constraints.size(), 4);
+    // The vertex constraints are ordered just as they are added.
+    EXPECT_EQ(vertex_constraints[0], u_b0_0);
+    EXPECT_EQ(vertex_constraints[1], u_b0_1);
+    EXPECT_EQ(vertex_constraints[2], u_b1_0);
+    EXPECT_EQ(vertex_constraints[3], u_b1_1);
+  }
+  // If no transcription is specified, nothing will be returned.
+  EXPECT_THROW(e_->GetConstraints({}), std::exception);
+  EXPECT_THROW(u_->GetConstraints({}), std::exception);
+
+  symbolic::Variable other_var("x");
+  DRAKE_EXPECT_THROWS_MESSAGE(e_->AddConstraintForAgent(
+                              0, other_var == 1),
+                              ".*IsSubsetOf.*");
+  DRAKE_EXPECT_THROWS_MESSAGE(e_->AddConstraintForAgent(
+                              1, other_var == 1),
+                              ".*IsSubsetOf.*");
+  DRAKE_EXPECT_THROWS_MESSAGE(u_->AddConstraint(other_var == 1),
+                              ".*IsSubsetOf.*");
+}
 
 // // Verifies that the correct solver is used for the MIP, relaxation,
 // // preprocessing, and restriction.

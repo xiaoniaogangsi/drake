@@ -5146,7 +5146,7 @@ Raises:
               // Source: drake/geometry/optimization/multi_agent_graph_of_convex_sets.h
               const char* doc_binding =
 R"""(Adds a cost to this edge for agent ``agent``. ``binding`` must contain
-*only* elements of xu() and xv() as variables. For technical reasons
+only* elements of xu() and xv() as variables. For technical reasons
 relating to being able to "turn-off" the cost on inactive edges, all
 costs are eventually implemented with a slack variable and a
 constraint:
@@ -5226,7 +5226,8 @@ AddPhiConstraintForAgent at once)""";
               // Source: drake/geometry/optimization/multi_agent_graph_of_convex_sets.h
               const char* doc =
 R"""(Returns constraints on this edge. (The union of constraints for all
-agnets)
+agnets), note that the order of the bindings in the returned vector is
+sorted by agents.
 
 Parameter ``used_in_transcription``:
     specifies the components of the problem from which the constraint
@@ -5255,7 +5256,9 @@ Raises:
             struct /* GetCosts */ {
               // Source: drake/geometry/optimization/multi_agent_graph_of_convex_sets.h
               const char* doc =
-R"""(Returns costs on this edge. (The union of costs for all agents)
+R"""(Returns costs on this edge. (The union of costs for all agents), note
+that the order of the bindings in the returned vector is sorted by
+agents.
 
 Parameter ``used_in_transcription``:
     specifies the components of the problem from which the constraint
