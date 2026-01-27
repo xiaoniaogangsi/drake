@@ -2330,23 +2330,35 @@ MultiAgentGraphOfConvexSets::SolveShortestPathForMultiAgent(
       }
     }
 
+    std::map<int, MathematicalProgramResult> agent_results;
     for (int a = 0; a < n_agents; ++a) {
       if (best_cost[a] < kInf) {
         // We found at least one valid result.
-        int global_idx =
-            best_result_idx[a];  // index into rounded_sults/prog_ptrs
-        result = rounded_results[global_idx];
-        int path_idx =
-            prog_idx[global_idx].second;  // recover per-agent path index
+        int global_idx = best_result_idx[a];
+            // index into rounded_results/prog_ptrs
+        MathematicalProgramResult agent_result = rounded_results[global_idx];
+        int path_idx = prog_idx[global_idx].second;
+            // recover per-agent path index
         MakeRestrictionResultLookLikeMixedIntegerForAgent(
-            a, n_agents, *(prog_ptrs[global_idx]), &result,
+            a, n_agents, *(prog_ptrs[global_idx]), &agent_result,
             candidate_paths_list[a][path_idx]);
+        agent_results[a] = agent_result;
+        log()->info("Agent {}: Found solution with cost {}.", 
+            a, best_cost[a]);
       } else {
         // In the event that all rounded results are infeasible, we still want
         // to propagate the solver id for logging.
+        log()->warn("Agent {}: No feasible solution found.", a);
         result.set_solution_result(SolutionResult::kIterationLimit);
         result.set_solver_id(rounded_results.back().get_solver_id());
+        break;  
+        // One infeasible agent will cause the entire problem infeasible
       }
+    }
+
+    // Merge all results for agents
+    if (agent_results.size() == static_cast<size_t>(n_agents)) {
+      MergeMultiAgentResults(agent_results, n_agents, &result);
     }
 
     int rounding_num = 0;
@@ -2358,6 +2370,86 @@ MultiAgentGraphOfConvexSets::SolveShortestPathForMultiAgent(
   }
 
   return result;
+}
+
+// Used for multi-agent rounding phase, for merging the results of
+// each agents into a unified `result`.
+void MultiAgentGraphOfConvexSets::MergeMultiAgentResults(
+    const std::map<int, MathematicalProgramResult>& agent_results,
+    int n_agents,
+    MathematicalProgramResult* merged_result) const {
+  DRAKE_DEMAND(merged_result != nullptr);
+  DRAKE_DEMAND(agent_results.size() == static_cast<size_t>(n_agents));
+
+  // Initialize merged decision variable index and x values
+  std::unordered_map<symbolic::Variable::Id, int> merged_index;
+  std::vector<double> merged_x_values;
+  int current_index = 0;
+
+  // Track the best cost found across all agents
+  double total_optimal_cost = 0.0;
+  bool all_success = true;
+
+  // 1. Merge decision variables from all agents
+  for (int a = 0; a < n_agents; ++a) {
+    if (agent_results.find(a) == agent_results.end()) {
+      log()->warn("Agent {} has no result in merge operation.", a);
+      all_success = false;
+      continue;
+    }
+
+    const auto& agent_result = agent_results.at(a);
+
+    if (!agent_result.is_success()) {
+      log()->warn("Agent {} result is not successful.", a);
+      all_success = false;
+    }
+
+    // Get agent's decision variable index
+    const auto* agent_index = agent_result.get_decision_variable_index();
+    if (!agent_index) {
+      log()->warn("Agent {} has no decision variable index.", a);
+      continue;
+    }
+
+    // Merge this agent's variables
+    const Eigen::VectorXd& agent_x = agent_result.get_x_val();
+    for (const auto& [var_id, var_idx] : *agent_index) {
+      // Only add if not already present (to avoid duplicates for shared vertices)
+      if (merged_index.find(var_id) == merged_index.end()) {
+        merged_index.emplace(var_id, current_index);
+        if (var_idx < agent_x.size()) {
+          merged_x_values.push_back(agent_x[var_idx]);
+          current_index++;
+        }
+      }
+    }
+
+    // Accumulate optimal cost
+    if (agent_result.is_success()) {
+      total_optimal_cost += agent_result.get_optimal_cost();
+    }
+  }
+
+  // 2. Set merged result properties
+  Eigen::VectorXd merged_x(merged_x_values.size());
+  for (size_t i = 0; i < merged_x_values.size(); ++i) {
+    merged_x(i) = merged_x_values[i];
+  }
+
+  merged_result->set_x_val(merged_x);
+  merged_result->set_decision_variable_index(merged_index);
+  merged_result->set_optimal_cost(total_optimal_cost);
+
+  // 3. Set solution result
+  if (all_success) {
+    merged_result->set_solution_result(SolutionResult::kSolutionFound);
+  } else {
+    merged_result->set_solution_result(SolutionResult::kIterationLimit);
+  }
+
+  log()->info("Merged results for {} agents. Total cost: {}", n_agents,
+              total_optimal_cost);
 }
 
 // In multi-agent case, we need to sample the paths for a specific agent  --
@@ -2690,7 +2782,12 @@ MultiAgentGraphOfConvexSets::ConstructRestrictionProgramForAgent(
     if (initial_guess) {
       prog->SetInitialGuess(v->x(), initial_guess->GetSolution(v->x()));
     }
-    v->set().AddPointInSetConstraints(prog.get(), v->x());
+    int len = v->set().ambient_dimension();
+    // std::cout << "Checkpoint before AddPointInSetConstraints in ConstructRestrictionProgramForAgent.\n";
+    // std::cout << "v->x() = " << v->x() << std::endl;
+    // std::cout << fmt::format("v->x().segment({} * {}, {}) = ", agent_id, len, len) << v->x().segment(agent_id * len, len) << std::endl;
+    v->set().AddPointInSetConstraints(prog.get(), v->x().segment(agent_id * len, len));
+    // std::cout << "Checkpoint after AddPointInSetConstraints in ConstructRestrictionProgramForAgent.\n";
 
     // Vertex costs.
     for (const auto& [b, transcriptions] : v->costs_) {

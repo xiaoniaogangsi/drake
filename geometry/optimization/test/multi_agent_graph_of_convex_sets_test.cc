@@ -879,52 +879,69 @@ TEST_F(TwoPoints, ReportCorrectSolverId) {
     sources, targets, 2, options), std::exception);
 }
 
-// // Verify that assigning a transcription to a cost adds it to the correct
-// // problem.
-// TEST_F(TwoPoints, VerifyCostTranscriptionAssignment) {
-//   const double kCostRelaxation = 1.23;
-//   const double kCostRestriction = 4.56;
-//   const double kCostMIP = 7.89;
-//   // We add each cost four times, once for each AddCost entry point.
-//   for (const auto& [transcription, cost] :
-//        {std::pair<Transcription, double>{Transcription::kMIP, kCostMIP},
-//         std::pair<Transcription, double>{Transcription::kRelaxation,
-//                                          kCostRelaxation},
-//         std::pair<Transcription, double>{Transcription::kRestriction,
-//                                          kCostRestriction}}) {
-//     auto e_b = e_->AddCost(cost, {transcription});
-//     e_->AddCost(e_b, {transcription});
-//     auto v_b = v_->AddCost(cost, {transcription});
-//     v_->AddCost(v_b, {transcription});
-//   }
-//   GraphOfConvexSetsOptions options;
-//   options.preprocessing = false;
+// Verify that assigning a transcription to a cost adds it to the correct
+// problem.
+TEST_F(TwoPoints, VerifyCostTranscriptionAssignment) {
+  const double kCostRelaxation = 1.23;
+  const double kCostRestriction = 4.56;
+  const double kCostMIP = 7.89;
+  const int n_agents = 2;
+  // We add each cost four times, once for each AddCost entry point.
+  for (const auto& [transcription, cost] :
+       {std::pair<Transcription, double>{Transcription::kMIP, kCostMIP},
+        std::pair<Transcription, double>{Transcription::kRelaxation,
+                                         kCostRelaxation},
+        std::pair<Transcription, double>{Transcription::kRestriction,
+                                         kCostRestriction}}) {
+    // For Edge: use AddCostForAgent for each agent
+    for (int agent = 0; agent < n_agents; ++agent) {
+      auto e_b = e_->AddCostForAgent(agent, cost, {transcription});
+      e_->AddCostForAgent(agent, e_b, {transcription});
+    }
+    // For Vertex: use AddCost
+    auto v_b = v_->AddCost(cost, {transcription});
+    v_->AddCost(v_b, {transcription});
+  }
+  GraphOfConvexSetsOptions options;
+  options.preprocessing = false;
 
-//   // The convex relaxation should be successful.
-//   options.convex_relaxation = true;
-//   options.max_rounded_paths = 0;
-//   auto result = g_.SolveShortestPath(*u_, *v_, options);
-//   EXPECT_TRUE(result.is_success());
-//   EXPECT_NEAR(result.get_optimal_cost(), 4 * kCostRelaxation, 1e-6);
+  // The convex relaxation should be successful.
+  options.convex_relaxation = true;
+  options.max_rounded_paths = 0;
+  std::vector<Vertex*> sources = {u_, u_};
+  std::vector<Vertex*> targets = {v_, v_};
+  auto result = g_.SolveShortestPathForMultiAgent(sources, targets, n_agents, options);
+  EXPECT_TRUE(result.is_success());
+  EXPECT_NEAR(result.get_optimal_cost(), n_agents * 4 * kCostRelaxation, 1e-6);
 
-//   // The restriction, also in the rounding, should be successful.
-//   options.convex_relaxation = true;
-//   options.max_rounded_paths = 1;
-//   result = g_.SolveConvexRestriction({e_}, options);
-//   EXPECT_TRUE(result.is_success());
-//   EXPECT_NEAR(result.get_optimal_cost(), 4 * kCostRestriction, 1e-6);
-//   result = g_.SolveShortestPath(*u_, *v_, options);
-//   EXPECT_TRUE(result.is_success());
-//   EXPECT_NEAR(result.get_optimal_cost(), 4 * kCostRestriction, 1e-6);
+  // The restriction, also in the rounding, should be successful.
+  options.convex_relaxation = true;
+  options.max_rounded_paths = 1;
 
-//   // The MIP should be successful as well.
-//   options.convex_relaxation = false;
-//   if (MixedIntegerSolverAvailable()) {
-//     result = g_.SolveShortestPath(*u_, *v_, options);
-//     EXPECT_TRUE(result.is_success());
-//     EXPECT_NEAR(result.get_optimal_cost(), 4 * kCostMIP, 1e-6);
-//   }
-// }
+  // Test restriction for each agent
+  for (int agent = 0; agent < n_agents; ++agent) {
+    result = g_.SolveConvexRestrictionForAgent(agent, n_agents, {e_}, options);
+    EXPECT_TRUE(result.is_success());
+    EXPECT_NEAR(result.get_optimal_cost(), 4 * kCostRestriction, 1e-6);
+    // Fix the active edge of a particular `agent` and construct its restriction
+    // MathematicalProgram. So there are only 2 edge costs and 2 vertex costs for
+    // only one agent. 
+  }
+  // Restriction --> Rounding --> Shortest Path
+  // Restriction only uses one representative agent, so do Rounding, who shares
+  // the path with Restriction phase. (NEED FURTHER CHECK)
+  result = g_.SolveShortestPathForMultiAgent(sources, targets, n_agents, options);
+  EXPECT_TRUE(result.is_success());
+  EXPECT_NEAR(result.get_optimal_cost(), 4 * kCostRestriction, 1e-6);
+
+  // The MIP should be successful as well.
+  options.convex_relaxation = false;
+  if (MixedIntegerSolverAvailable()) {
+    result = g_.SolveShortestPathForMultiAgent(sources, targets, n_agents, options);
+    EXPECT_TRUE(result.is_success());
+    EXPECT_NEAR(result.get_optimal_cost(), n_agents * 4 * kCostMIP, 1e-6);
+  }
+}
 
 // // Verify that assigning a transcription to a constraint adds it to the
 // correct
