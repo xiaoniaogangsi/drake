@@ -834,7 +834,9 @@ TEST_F(TwoPoints, ReportCorrectSolverId) {
   // With the rounding on, the reported solver should be the restriction
   // solver 
   options.max_rounded_paths = 1; 
+  std::cout << "Checkpoint 5" << std::endl;
   result = g_.SolveShortestPathForMultiAgent(sources, targets, 2, options); 
+  std::cout << "Checkpoint 6" << std::endl;
   EXPECT_TRUE(result.is_success());
   EXPECT_EQ(result.get_solver_id(), options.restriction_solver->solver_id());
 

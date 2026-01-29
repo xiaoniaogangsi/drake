@@ -956,11 +956,12 @@ class MultiAgentGraphOfConvexSets {
       solvers::MathematicalProgramResult* result,
       const std::vector<const Edge*>& active_edges) const;
 
-  // Merges per-agent restriction results into a unified MathematicalProgramResult
+  // Merges per-agent restriction results into a unified 
+  // MathematicalProgramResult.
   void MergeMultiAgentResults(
-      const std::map<int, MathematicalProgramResult>& agent_results,
+      const std::map<int, solvers::MathematicalProgramResult>& agent_results,
       int n_agents,
-      MathematicalProgramResult* merged_result) const;
+      solvers::MathematicalProgramResult* merged_result) const;
 
   // Function of PreprocessShortestPath for multi-agent case
   std::set<EdgeId> PreprocessShortestPathForMultiAgent(

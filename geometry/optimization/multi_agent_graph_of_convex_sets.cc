@@ -1824,10 +1824,10 @@ MultiAgentGraphOfConvexSets::SolveShortestPathForMultiAgent(
       for (int i = 0; i < ea.ell_.size(); ++i) {
         const auto& [b, transcriptions] = ea.costs_[i];
         if (IncludesCurrentTranscription(transcriptions)) {
-          Vector1<Variable> v;
-          v << ea.ell_[i];
-          prog.AddDecisionVariables(v);
-          prog.AddLinearCost(VectorXd::Ones(1), v);
+          Vector1<Variable> var;
+          var << ea.ell_[i];
+          prog.AddDecisionVariables(var);
+          prog.AddLinearCost(VectorXd::Ones(1), var);
           const VectorXDecisionVariable& old_vars = b.variables();
           VectorXDecisionVariable vars(old_vars.size() + 2);
           // vars = [phi; ell; yz_vars]
@@ -1836,11 +1836,11 @@ MultiAgentGraphOfConvexSets::SolveShortestPathForMultiAgent(
           for (int j = 0; j < old_vars.size(); ++j) {
             vars[j + 2] = ea.x_to_yz_.at(old_vars[j]);
           }
-          // // DEBUG: show x_to_yz_:
-          // std::cout << "Edge " << edge_id << " Agent " << a << " has x_to_yz: " << std::endl;
-          // for (auto [key, value] : ea.x_to_yz_) {
-          //   std::cout << "  " << key << ": " << value << std::endl;
-          // }
+          // DEBUG: show x_to_yz_:
+          std::cout << "Edge " << e->name() << " (ID=" << edge_id << ") Agent " << a << " has x_to_yz: " << std::endl;
+          for (auto [key, value] : ea.x_to_yz_) {
+            std::cout << "  " << key << ": " << value << std::endl;
+          }
 
           AddPerspectiveCost(&prog, b, vars);
         }
@@ -2073,13 +2073,16 @@ MultiAgentGraphOfConvexSets::SolveShortestPathForMultiAgent(
     // result, so that they can be accessed as if they were variables included
     // in the optimization.
     int num_placeholder_vars = static_cast<int>(relaxed_phi.size());
+    std::cout << "Number of relaxed_phi = "  << static_cast<int>(relaxed_phi.size()) << std::endl;
     for (const std::pair<const VertexId, std::unique_ptr<Vertex>>& vpair :
          vertices_) {
       const Vertex* v = vpair.second.get();
       num_placeholder_vars += v->full_dimension();
+      std::cout << "Vertex " << v->name() << " (ID=" << vpair.first <<")->full_dimension() = " << v->full_dimension() << std::endl;
       for (int i = 0; i < v->ell_.size(); ++i) {
         const auto& [b, transcriptions] = v->costs_[i];
         if (IncludesCurrentTranscription(transcriptions)) {
+          std::cout << "ell[" << i << "] added" << std::endl;
           num_placeholder_vars += 1;
         }
       }
@@ -2091,15 +2094,25 @@ MultiAgentGraphOfConvexSets::SolveShortestPathForMultiAgent(
         num_placeholder_vars += static_cast<int>(e->agent_data(a).y_.size());
         num_placeholder_vars += static_cast<int>(e->agent_data(a).z_.size());
         num_placeholder_vars += 1;  // phi for this agent
+        std::cout << "Excluded Edge " << e->name() << "[a].y_.size() = " << static_cast<int>(e->agent_data(a).y_.size()) << std::endl;
+        std::cout << "Excluded Edge " << e->name() << "[a].z_.size() = " << static_cast<int>(e->agent_data(a).z_.size()) << std::endl;
+        std::cout << "Phi: 1" << std::endl;
       }
       // num_placeholder_vars += e->y_.size() + e->z_.size() + 1;
     }
     // excluded_phi now is a map<pair<EdgeId, int>, Variable> for edges with
     // ϕ[a] = 0
     num_placeholder_vars += static_cast<int>(excluded_phi.size());
+    std::cout << "Excluded Phi Size: " << static_cast<int>(excluded_phi.size()) << std::endl;
     std::unordered_map<symbolic::Variable::Id, int> decision_variable_index =
         prog.decision_variable_index();
     int count = result.get_x_val().size();
+    std::cout << "num of vars in x_val of result = " << count << std::endl;
+    std::cout << "num of placeholder vars = " << num_placeholder_vars << std::endl; 
+    
+    // Build a larger "solution vector", with the first `count` vars as 
+    // the actual solutions from the solver, the last `num_placeholder_vars` vars
+    // are the placeholders for the extra vars that are not included in programming.
     Eigen::VectorXd x_val(count + num_placeholder_vars);
     x_val.head(count) = result.get_x_val();
     // Fill placeholders for excluded_edges (per-agent y/z/phi = 0).
@@ -2170,6 +2183,7 @@ MultiAgentGraphOfConvexSets::SolveShortestPathForMultiAgent(
       for (int a = 0; a < n_agents; ++a) {
         if (sum_phi_agents[a] <
             100.0 * std::numeric_limits<double>::epsilon()) {
+          // If sum of phi for agent a is almost 0, then
           // mark this agent's segment as invalid (NaN)
           x_v.segment(a * dim, dim) = VectorXd::Constant(
               v->ambient_dimension(), std::numeric_limits<double>::quiet_NaN());
@@ -2252,7 +2266,7 @@ MultiAgentGraphOfConvexSets::SolveShortestPathForMultiAgent(
     //   }
     // }
 
-    std::map<int, std::vector<std::vector<const Edge*>>> candidate_paths_list;
+    std::vector<std::vector<std::vector<const Edge*>>> candidate_paths_list;
     for (int a = 0; a < n_agents; ++a) {
       std::vector<std::vector<const Edge*>> candidate_paths =
           SamplePaths(*(sources[a]), *(targets[a]), flows[a], options);
@@ -2266,9 +2280,8 @@ MultiAgentGraphOfConvexSets::SolveShortestPathForMultiAgent(
             "options.max_rounded_paths=0 to disable rounding and return "
             "the solution to the relaxation instead.");
       }
-      candidate_paths_list.insert(
-          std::pair<int, std::vector<std::vector<const Edge*>>>(
-              a, candidate_paths));
+      candidate_paths_list.push_back(
+          std::vector<std::vector<const Edge*>>>(candidate_paths));
     }
 
     // If any costs or constraints aren't thread-safe, we can't parallelize.
@@ -2288,7 +2301,7 @@ MultiAgentGraphOfConvexSets::SolveShortestPathForMultiAgent(
       for (int i = 0; i < ssize(candidate_paths); ++i) {
         progs.push_back(ConstructRestrictionProgramForAgent(candidate_paths[i],
                                                             a, &result));
-        prog_ptrs.push_back(progs[i].get());
+        prog_ptrs.push_back(progs.back().get());
         prog_idx.push_back(std::pair<int, int>(a, i));
       }
     }
@@ -2406,15 +2419,21 @@ void MultiAgentGraphOfConvexSets::MergeMultiAgentResults(
     }
 
     // Get agent's decision variable index
-    const auto* agent_index = agent_result.get_decision_variable_index();
-    if (!agent_index) {
+    auto agent_index_opt = agent_result.get_decision_variable_index();
+    if (!agent_index_opt.has_value()) {
       log()->warn("Agent {} has no decision variable index.", a);
       continue;
     }
+    const auto& agent_index = *agent_index_opt;
 
     // Merge this agent's variables
     const Eigen::VectorXd& agent_x = agent_result.get_x_val();
-    for (const auto& [var_id, var_idx] : *agent_index) {
+    std::cout << "agent_x = " << agent_x << std::endl;
+    std::cout << "agent_index = " << std::endl;
+    for (const auto& kv : agent_index) {
+      const symbolic::Variable::Id var_id = kv.first;
+      const int var_idx = kv.second;
+      std::cout << "var_id = " << var_id << ", var_idx = " << var_idx << std::endl;
       // Only add if not already present (to avoid duplicates for shared vertices)
       if (merged_index.find(var_id) == merged_index.end()) {
         merged_index.emplace(var_id, current_index);
@@ -2423,6 +2442,10 @@ void MultiAgentGraphOfConvexSets::MergeMultiAgentResults(
           current_index++;
         }
       }
+    }
+    std::cout << "merged_index = " << std::endl;
+    for (const auto& kv : merged_index) {
+      std::cout << "var_id = " << kv.first << ", var_idx = " << kv.second << std::endl;
     }
 
     // Accumulate optimal cost
@@ -2437,6 +2460,7 @@ void MultiAgentGraphOfConvexSets::MergeMultiAgentResults(
     merged_x(i) = merged_x_values[i];
   }
 
+  std::cout << "merged_x = " << merged_x << std::endl;
   merged_result->set_x_val(merged_x);
   merged_result->set_decision_variable_index(merged_index);
   merged_result->set_optimal_cost(total_optimal_cost);
